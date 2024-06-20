@@ -1,3 +1,5 @@
+# pylint: disable=no-member
+import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from keras import layers
@@ -17,6 +19,9 @@ class UNet:
         learning_rate: float = 0.0011,
         batch_size: int = 32,
         batch_normalization: bool = False,
+        kernel_regularization: str = None,
+        bias_regularization: str = None,
+        activity_regularization: str = None,
         image_size: int = 128,
         n_filters: int = 128,
         mask: str = MASK,
@@ -32,6 +37,9 @@ class UNet:
         self.min_vote = min_vote
         self.n_filters = n_filters
         self.mask = mask
+        self.kernel_regularization = kernel_regularization
+        self.bias_regularization = bias_regularization
+        self.activity_regularization = activity_regularization
         self.unet_model = self.build_unet_model()
 
         if self.mask == 'spiral_mask':
@@ -39,37 +47,48 @@ class UNet:
         elif self.mask == 'bar_mask':
             self.TRAIN_LENGTH, self.VAL_SIZE, self.TEST_SIZE = 3783, 832, 421
 
-    def augment(self, input_image, input_mask):
-        if tf.random.uniform(()) > 0.5:
-            input_image = tf.image.flip_left_right(input_image)
-            input_mask = tf.image.flip_left_right(input_mask)
-        if tf.random.uniform(()) > 0.5:
-            input_image = tf.image.flip_up_down(input_image)
-            input_mask = tf.image.flip_up_down(input_mask)
+    def augment(self, image, mask):
+        mirror = np.random.uniform(low=0.0, high=1.0) > 0.5
+        rotate = np.random.uniform(low=0.0, high=1.0) > 0.5
+        crop = np.random.uniform(low=0.0, high=1.0) > 0.5
+        if rotate:
+            factor = np.random.uniform(low=-1.0, high=1.0)
+            # factor = tf.random.uniform((), minval=-1, maxval=1, seed=RANDOM_SEED).numpy()
+            image = tf.keras.layers.RandomRotation(factor, interpolation='bilinear')(
+                image
+            )
+            mask = tf.keras.layers.RandomRotation(factor, interpolation='bilinear')(
+                mask
+            )
+        if mirror:
+            image = tf.image.flip_left_right(image)
+            mask = tf.image.flip_left_right(mask)
 
-        return input_image, input_mask
+        if crop:
+            image = image[0:420, 0:420, :]
+            mask = mask[0:420, 0:420, :]
 
-    def binary_mask(self, input_mask, threshold: int = THRESHOLD):
-        input_mask = tf.where(
-            input_mask < threshold, tf.zeros_like(input_mask), tf.ones_like(input_mask)
-        )
+        return image, mask
 
-        return input_mask
+    def binary_mask(self, mask, threshold: int = THRESHOLD):
+        return tf.where(mask < threshold, tf.zeros_like(mask), tf.ones_like(mask))
 
     def load_image_train(self, datapoint):
-        input_image = datapoint['image']
-        input_mask = datapoint[self.mask]
-        input_image = tf.image.resize(
-            input_image, (self.image_size, self.image_size), method="nearest"
-        )
-        input_mask = tf.image.resize(
-            input_mask, (self.image_size, self.image_size), method="nearest"
-        )
-        input_image, input_mask = self.augment(input_image, input_mask)
-        input_image = tf.cast(input_image, tf.float32) / 255.0
-        input_mask = self.binary_mask(input_mask, THRESHOLD)
+        image = datapoint['image']
+        mask = datapoint[self.mask]
+        image, mask = self.augment(image, mask)
 
-        return input_image, input_mask
+        image = tf.image.resize(
+            image, (self.image_size, self.image_size), method="bilinear"
+        )
+        mask = tf.image.resize(
+            mask, (self.image_size, self.image_size), method="bilinear"
+        )
+
+        image = tf.cast(image, tf.float32) / 255.0
+        mask = self.binary_mask(mask, THRESHOLD)
+
+        return image, mask
 
     def load_image_test(self, datapoint):
         input_image = datapoint['image']
@@ -92,6 +111,9 @@ class UNet:
             padding="same",
             activation="relu",
             kernel_initializer="he_normal",
+            kernel_regularizer=self.kernel_regularization,
+            bias_regularizer=self.bias_regularization,
+            activity_regularizer=self.activity_regularization,
         )(x)
         if self.batch_normalization:
             x = layers.BatchNormalization()(x)
@@ -102,6 +124,9 @@ class UNet:
             padding="same",
             activation="relu",
             kernel_initializer="he_normal",
+            kernel_regularizer=self.kernel_regularization,
+            bias_regularizer=self.bias_regularization,
+            activity_regularizer=self.activity_regularization,
         )(x)
         if self.batch_normalization:
             x = layers.BatchNormalization()(x)
@@ -115,7 +140,15 @@ class UNet:
         return f, p
 
     def upsample_block(self, x, conv_features, n_filters):
-        x = layers.Conv2DTranspose(n_filters, 3, 2, padding="same")(x)
+        x = layers.Conv2DTranspose(
+            n_filters,
+            3,
+            2,
+            padding="same",
+            kernel_regularizer=self.kernel_regularization,
+            bias_regularizer=self.bias_regularization,
+            activity_regularizer=self.activity_regularization,
+        )(x)
         x = layers.concatenate([x, conv_features])
         x = layers.Dropout(self.dropout_rate)(x)
         x = self.double_conv_block(x, n_filters)
@@ -139,9 +172,7 @@ class UNet:
 
         outputs = layers.Conv2D(2, 1, padding="same", activation="softmax")(u9)
 
-        model = tf.keras.Model(  # pylint: disable=no-member
-            inputs, outputs, name="U-Net"
-        )
+        model = tf.keras.Model(inputs, outputs, name="U-Net")
 
         return model
 
@@ -195,7 +226,9 @@ class UNet:
             validation_data=validation_batches,
             callbacks=[
                 WandbMetricsLogger(),
-                tf.keras.callbacks.ModelCheckpoint(MODELS_DIR / f"{self.mask}.keras"),
+                tf.keras.callbacks.ModelCheckpoint(  # pylint: disable=no-member
+                    MODELS_DIR / f"{self.mask}.keras"
+                ),
             ],
         )
 

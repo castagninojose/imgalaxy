@@ -10,8 +10,8 @@ services:
       - ${JUPYTER_PORT}:${JUPYTER_PORT}
     expose:
       - ${JUPYTER_PORT}
-    command: 'poetry run python imgalaxy/train.py --mask bar_mask'
-    #command: 'tail -f /dev/null'
+    #command: 'poetry run python imgalaxy/train.py --mask bar_mask --num-epochs 13'
+    command: 'tail -f /dev/null'
     #command: 'poetry run wandb sweep --resume ganegroup/galaxy-segmentation-project/5aljuyxn'
     volumes:
       - ${GALAXY_ZOO_DIR}:/root/tensorflow_datasets/galaxy_zoo3d

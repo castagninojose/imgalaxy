@@ -7,7 +7,7 @@ metric:
   goal: maximize
 parameters:
   loss:
-    values: [sparse_categorical_crossentropy, dice]
+    values: [sparse_categorical_crossentropy, dice, binary_focal_crossentropy]
   dropout:
     distribution: uniform
     max: 0.4
@@ -24,4 +24,9 @@ parameters:
     values: [64, 128]
   min_vote:
     values: [3]
-
+  kernel_regularizer:
+    values: [None, l1, l2, l1_l2]
+  bias_regularizer:
+    values: [None, l1, l2, l1_l2]
+  activity_regularizer:
+    values: [None, l1, l2, l1_l2]
