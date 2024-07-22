@@ -1,120 +1,160 @@
-# pylint: disable=non-ascii-file-name
-"""Explore spectrometry signals."""
+"""Annotate simulated strong gravitational lenses images."""
+from datetime import datetime
 from pathlib import Path
+from typing import List, Mapping, Tuple
 
 import numpy as np
 import plotly.express as px
 import streamlit as st
+from astropy import convolution
 from numpy.typing import NDArray
+from photutils.background import Background2D, MedianBackground
+from photutils.segmentation import (
+    SegmentationImage,
+    SourceFinder,
+    make_2dgaussian_kernel,
+)
 
-from imgalaxy.cfg import DES_DATA, DES_NO_SOURCE_DATA, LENSING_MASKS_DIR
-from imgalaxy.lensing import threshold_split
+from imgalaxy.cfg import DES_NO_SOURCE_DATA, LENSING_MASKS_DIR
 
-st.set_page_config(page_title="Lensing Masks", layout="wide")
+BANDS: Mapping[int, str] = {0: 'G', 1: 'R', 2: 'I', 3: 'Z', 4: 'Y'}
+CHANNEL: str = 'rgb'
 
 
-def update_mask(
-    galaxy_ix: int, mask_name: str, masks: NDArray, channels: list, save: bool = False
-) -> NDArray:
-    filepath: Path = LENSING_MASKS_DIR / f"{galaxy_ix}_{mask_name}_mask.npy"
-    current_mask = np.load(filepath)
-    mask = current_mask.copy()
-    for c in range(5):
-        if channels[c]:
-            mask = mask + masks[:, :, c]
+def has_center(segmentation: NDArray, label: int) -> bool:
+    """Boolean indicating if the center belongs to `label` in `segmentation` map."""
+    mask: NDArray = segmentation == label
+    centroids: List[Tuple] = [(31, 32), (32, 31), (32, 32), (33, 32), (32, 33)]
+    for center in centroids:
+        if mask[center]:
+            return True
 
-    if save:
-        np.save(filepath, mask)
+    return False
 
+
+def remove_center_label(segmentation_map: SegmentationImage) -> NDArray:
+    """Remove center segment (ie) the one that `has_center()`."""
+    mask: NDArray = segmentation_map._data.copy()  # pylint: disable=protected-access
+    for label in segmentation_map.labels:
+        if has_center(mask, label):
+            mask[mask == label] = 0
     return mask
+
+
+def keep_only_center(segmentation_map: SegmentationImage) -> NDArray:
+    """Keep center segment (ie) the one that `has_center()`."""
+    mask = segmentation_map._data.copy()  # pylint: disable=protected-access
+    for label in segmentation_map.labels:
+        if has_center(mask, label):
+            mask[mask == label] = 1
+        else:
+            mask[mask == label] = 0
+    return mask
+
+
+def segment_background(data: NDArray, thresh: float = 1.5, npixels: int = 1):
+    """Build segmentation map using photutils's Background2D and SourceFinder."""
+    bkg = Background2D(
+        data,
+        (64, 64),
+        filter_size=7,
+        bkg_estimator=MedianBackground(),
+        exclude_percentile=12.5,
+    )
+    data -= bkg.background
+
+    threshold = thresh * bkg.background_rms
+    kernel = make_2dgaussian_kernel(3.0, size=5)
+    convolved_data = convolution.convolve(data, kernel)
+    finder = SourceFinder(
+        npixels=npixels,
+        connectivity=4,
+        progress_bar=False,
+        nlevels=32,
+        mode='sinh',
+        contrast=10 ** (-6),
+    )
+    segment_map = finder(convolved_data, threshold)
+
+    return segment_map
 
 
 def main():
     """Streamlit dashboard app."""
 
+    st.set_page_config(page_title="Lensing Masks", layout="wide")
+
     explore = st.container()
     with explore:
-        galaxy_ix = st.number_input(
-            "Galaxy id", min_value=0, max_value=9999, value="min"
-        )
-        source_images = DES_DATA[galaxy_ix]
-        background_images = DES_NO_SOURCE_DATA[galaxy_ix]
+        galaxy_ix = st.number_input("Enter galaxy number", min_value=0, max_value=9999)
+        image = DES_NO_SOURCE_DATA[galaxy_ix].transpose(1, 2, 0).mean(axis=2)
 
-        background_and_source_images = source_images.transpose(1, 2, 0)
-        background_images = background_images.transpose(1, 2, 0)
-        source_images = background_and_source_images - background_images
+        lens_mask_fp: Path = LENSING_MASKS_DIR / f"{galaxy_ix}_lens_mask.npy"
+        back_mask_fp: Path = LENSING_MASKS_DIR / f"{galaxy_ix}_background_mask.npy"
 
-        threshold = st.selectbox(
-            "Threshold type", ['yen', 'triangle', 'li', 'otsu', 'min', 'iso', 'sigma']
-        )
-        small_objs_size = st.slider(
-            "Small objects filter", min_value=0.1, max_value=500.0, value=43.0
-        )
-        sigma_tol = st.slider(
-            "Sigma threshold size", min_value=0.1, max_value=25.0, value=3.0
-        )
-        layer_0, layer_1 = threshold_split(
-            background_images,
-            threshold_type=threshold,
-            sigma_threshold=sigma_tol,
-            small_objs_size=small_objs_size,
-            plot=False,
-        )
-        st.plotly_chart(
-            px.imshow(
-                background_images, binary_string=True, facet_col=2, facet_col_wrap=5
-            )
-        )
+        lens_col, galaxy_col, background_col = st.columns(3)
+        with galaxy_col:
+            _, title_col, _ = st.columns([2.3, 6, 1])
+            with title_col:
+                st.write(r"$\textsf{\Large Original image}$")
+                st.write("")
+                st.write("")
+                st.write("")
+                st.write("")
+                st.write("")
+                st.write("")
 
-        st.plotly_chart(
-            px.imshow(layer_0, binary_string=True, facet_col=2, facet_col_wrap=5)
-        )
-        st.plotly_chart(
-            px.imshow(layer_1, binary_string=True, facet_col=2, facet_col_wrap=5)
-        )
+            st.plotly_chart(px.imshow(image))
 
-        col1, col2 = st.columns(2)
+        with lens_col:
+            _, title_col, _ = st.columns([2.5, 6, 1])
+            with title_col:
+                st.write(r"$\textsf{\large Lens mask}$")
 
-        with col1:
-            layer = st.radio("Select layer", options=[0, 1], horizontal=True)
-        with col2:
-            mask_name = st.radio(
-                "Select mask type", options=["lens", "background"], horizontal=True
-            )
-        mask_filepath = LENSING_MASKS_DIR / f"{galaxy_ix}_{mask_name}_mask.npy"
+            (
+                threshold_col,
+                save_button_col,
+            ) = st.columns([5, 1])
+            with threshold_col:
+                threshold = st.slider(
+                    "Select surface level",
+                    min_value=-1.0,
+                    max_value=50.0,
+                    value=14.14,
+                    key='lens_th',
+                )
 
-        st.write("Select channels to add:")
-        channels = st.columns(5)
-        with channels[0]:
-            ch_0 = st.checkbox("Channel 0", value=True, key=0)
-        with channels[1]:
-            ch_1 = st.checkbox("Channel 1", value=True, key=1)
-        with channels[2]:
-            ch_2 = st.checkbox("Channel 2", value=True, key=2)
-        with channels[3]:
-            ch_3 = st.checkbox("Channel 3", value=True, key=3)
-        with channels[4]:
-            ch_4 = st.checkbox("Channel 4", value=True, key=4)
+            segmentation_map = segment_background(image, threshold)
+            lens_mask = keep_only_center(segmentation_map)
 
-        to_add_channels = [ch_0, ch_1, ch_2, ch_3, ch_4]
+            st.plotly_chart(px.imshow(lens_mask))
+            last_modified = datetime.fromtimestamp(lens_mask_fp.stat().st_mtime)
+            st.write(f"Last modified: {last_modified.strftime('%d/%-m, %H:%M')}")
 
-        galaxy_chart, current_mask_chart, new_mask_chart = st.columns(3)
-        with galaxy_chart:
-            st.plotly_chart(
-                px.imshow(background_images.sum(axis=2), title="Galaxy image")
+        with background_col:
+            _, title_col, _ = st.columns([2.5, 6, 1])
+            with title_col:
+                st.write(r"$\textsf{\large Background mask}$")
+            threshold = st.slider(
+                "Select surface level",
+                min_value=-1.0,
+                max_value=50.0,
+                value=1.9,
+                key='back_th',
             )
 
-        with current_mask_chart:
-            mask = np.load(mask_filepath)
-            st.plotly_chart(px.imshow(mask, title=f"{mask_filepath.name}"))
+            segmentation_map = segment_background(image, threshold)
+            background_mask = remove_center_label(segmentation_map)
 
-        with new_mask_chart:
-            new_mask = update_mask(
-                galaxy_ix, mask_name, [layer_0, layer_1][layer], to_add_channels
-            )
-            st.plotly_chart(px.imshow(new_mask, title=f"Candidate {mask_name} mask."))
-            if st.button("Save this mask."):
-                np.save(mask_filepath, new_mask)
+            st.plotly_chart(px.imshow(background_mask))
+            last_modified = datetime.fromtimestamp(lens_mask_fp.stat().st_mtime)
+            st.write(f"Last modified: {last_modified.strftime('%d/%-m, %H:%M')}")
+
+        _, save_button_col, _ = st.columns([5, 5, 2])
+        with save_button_col:
+            if st.button("Save these masks", key='save_background'):
+                np.save(back_mask_fp, background_mask)
+                np.save(lens_mask_fp, lens_mask)
 
 
 if __name__ == "__main__":
