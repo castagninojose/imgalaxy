@@ -78,7 +78,7 @@ def segment_background(
     return segment_map
 
 
-def _main():
+def main():
     """Streamlit dashboard app."""
 
     st.set_page_config(page_title="Lensing Masks", layout="wide")
@@ -87,8 +87,8 @@ def _main():
     with explore:
         galaxy_ix = st.number_input("Enter galaxy number", min_value=0, max_value=9999)
         background_image = DES_NO_SOURCE_DATA[galaxy_ix].transpose(1, 2, 0).mean(axis=2)
-        _source_image = DES_DATA[galaxy_ix].transpose(1, 2, 0).mean(axis=2)
-        source_image = _source_image - background_image
+        background_and_source = DES_DATA[galaxy_ix].transpose(1, 2, 0).mean(axis=2)
+        source_image = background_and_source - background_image
 
         lens_mask_fp: Path = LENSING_MASKS_DIR / f"{galaxy_ix}_lens_mask.npy"
         arcs_mask_fp: Path = LENSING_MASKS_DIR / f"{galaxy_ix}_arcs_mask.npy"
@@ -112,13 +112,15 @@ def _main():
                 "Select surface level",
                 min_value=-1.0,
                 max_value=80.0,
-                value=4.9,
+                value=44.9,
                 key='arcs_th',
             )
             arcs_mask = source_image > threshold
             st.plotly_chart(
                 px.imshow(arcs_mask).update_layout(coloraxis_showscale=False)
             )
+            last_modified = datetime.fromtimestamp(arcs_mask_fp.stat().st_mtime)
+            st.write(f"Last modified: {last_modified.strftime('%d/%-m, %H:%M')}")
 
         with source_col:
             st.write("")
@@ -175,95 +177,16 @@ def _main():
             st.plotly_chart(
                 px.imshow(background_mask).update_layout(coloraxis_showscale=False)
             )
-            last_modified = datetime.fromtimestamp(lens_mask_fp.stat().st_mtime)
+            last_modified = datetime.fromtimestamp(back_mask_fp.stat().st_mtime)
             st.write(f"Last modified: {last_modified.strftime('%d/%-m, %H:%M')}")
 
         _, save_button_col, _ = st.columns([5, 5, 2])
         with save_button_col:
             if st.button("Save these masks", key='save_background'):
-                np.save(back_mask_fp, background_mask)
-                np.save(lens_mask_fp, lens_mask)
+                # np.save(back_mask_fp, background_mask)
+                # np.save(lens_mask_fp, lens_mask)
                 np.save(arcs_mask_fp, arcs_mask)
 
 
-def main():
-    """Streamlit dashboard app."""
-
-    st.set_page_config(page_title="Lensing Masks", layout="wide")
-
-    explore = st.container()
-    with explore:
-        galaxy_ix = st.number_input("Enter galaxy number", min_value=0, max_value=9999)
-        image = DES_NO_SOURCE_DATA[galaxy_ix].transpose(1, 2, 0).mean(axis=2)
-
-        lens_mask_fp: Path = LENSING_MASKS_DIR / f"{galaxy_ix}_lens_mask.npy"
-        back_mask_fp: Path = LENSING_MASKS_DIR / f"{galaxy_ix}_background_mask.npy"
-
-        lens_col, galaxy_col, background_col = st.columns(3)
-        with galaxy_col:
-            _, title_col, _ = st.columns([2.3, 6, 1])
-            with title_col:
-                st.write(r"$\textsf{\Large Original image}$")
-                st.write("")
-                st.write("")
-                st.write("")
-                st.write("")
-                st.write("")
-                st.write("")
-
-            st.plotly_chart(px.imshow(image))
-
-        with lens_col:
-            _, title_col, _ = st.columns([2.5, 6, 1])
-            with title_col:
-                st.write(r"$\textsf{\large Lens mask}$")
-
-            (
-                threshold_col,
-                save_button_col,
-            ) = st.columns([5, 1])
-            with threshold_col:
-                threshold = st.slider(
-                    "Select surface level",
-                    min_value=-1.0,
-                    max_value=50.0,
-                    value=14.14,
-                    key='lens_th',
-                )
-
-            segmentation_map = segment_background(image, threshold)
-            lens_mask = keep_only_center(segmentation_map)
-
-            st.plotly_chart(px.imshow(lens_mask))
-            last_modified = datetime.fromtimestamp(lens_mask_fp.stat().st_mtime)
-            st.write(f"Last modified: {last_modified.strftime('%d/%-m, %H:%M')}")
-
-        with background_col:
-            _, title_col, _ = st.columns([2.5, 6, 1])
-            with title_col:
-                st.write(r"$\textsf{\large Background mask}$")
-            threshold = st.slider(
-                "Select surface level",
-                min_value=-1.0,
-                max_value=50.0,
-                value=1.9,
-                key='back_th',
-            )
-
-            segmentation_map = segment_background(image, threshold)
-            background_mask = remove_center_label(segmentation_map)
-
-            st.plotly_chart(px.imshow(background_mask))
-            last_modified = datetime.fromtimestamp(lens_mask_fp.stat().st_mtime)
-            st.write(f"Last modified: {last_modified.strftime('%d/%-m, %H:%M')}")
-
-        _, save_button_col, _ = st.columns([5, 5, 2])
-        with save_button_col:
-            if st.button("Save these masks", key='save_background'):
-                np.save(back_mask_fp, background_mask)
-                np.save(lens_mask_fp, lens_mask)
-
-
 if __name__ == "__main__":
-    # main()
-    _main()
+    main()
