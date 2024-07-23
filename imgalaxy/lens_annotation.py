@@ -35,7 +35,7 @@ def remove_center_label(segmentation_map: SegmentationImage) -> NDArray:
     for label in segmentation_map.labels:
         if has_center(mask, label):
             mask[mask == label] = 0
-    return mask
+    return mask > 0
 
 
 def keep_only_center(segmentation_map: SegmentationImage) -> NDArray:
@@ -96,12 +96,12 @@ def main():
 
         source_title, background_title = st.columns([2, 3])
         with source_title:
-            _, title, _ = st.columns([1, 3, 1])
+            _, title, _ = st.columns([2.57, 2.31, 1])
             with title:
                 st.write(r"$\textsf{\large Source}$")
 
         with background_title:
-            _, title, _ = st.columns([1, 3, 1])
+            _, title, _ = st.columns([2.41, 2, 1])
             with title:
                 st.write(r"$\textsf{\large Background}$")
 
@@ -115,10 +115,11 @@ def main():
                 value=44.9,
                 key='arcs_th',
             )
-            arcs_mask = source_image > threshold
-            st.plotly_chart(
-                px.imshow(arcs_mask).update_layout(coloraxis_showscale=False)
+            arcs_mask = segment_background(
+                source_image, thresh=threshold, exclude_pct=37.31
             )
+            arcs_mask = arcs_mask._data > 0  # pylint: disable=protected-access
+            st.plotly_chart(px.imshow(arcs_mask, binary_string=True))
             last_modified = datetime.fromtimestamp(arcs_mask_fp.stat().st_mtime)
             st.write(f"Last modified: {last_modified.strftime('%d/%-m, %H:%M')}")
 
@@ -129,9 +130,7 @@ def main():
             st.write("")
             st.write("")
             st.write("")
-            st.plotly_chart(
-                px.imshow(source_image).update_layout(coloraxis_showscale=False)
-            )
+            st.plotly_chart(px.imshow(source_image, binary_string=True))
 
         with galaxy_col:
             st.write("")
@@ -140,9 +139,7 @@ def main():
             st.write("")
             st.write("")
             st.write("")
-            st.plotly_chart(
-                px.imshow(background_image).update_layout(coloraxis_showscale=False)
-            )
+            st.plotly_chart(px.imshow(background_image, binary_string=True))
 
         with lens_col:
             threshold = st.slider(
@@ -152,13 +149,9 @@ def main():
                 value=14.14,
                 key='lens_th',
             )
-
             segmentation_map = segment_background(background_image, threshold)
             lens_mask = keep_only_center(segmentation_map)
-
-            st.plotly_chart(
-                px.imshow(lens_mask).update_layout(coloraxis_showscale=False)
-            )
+            st.plotly_chart(px.imshow(lens_mask, binary_string=True))
             last_modified = datetime.fromtimestamp(lens_mask_fp.stat().st_mtime)
             st.write(f"Last modified: {last_modified.strftime('%d/%-m, %H:%M')}")
 
@@ -170,13 +163,9 @@ def main():
                 value=1.9,
                 key='back_th',
             )
-
             segmentation_map = segment_background(background_image, threshold)
             background_mask = remove_center_label(segmentation_map)
-
-            st.plotly_chart(
-                px.imshow(background_mask).update_layout(coloraxis_showscale=False)
-            )
+            st.plotly_chart(px.imshow(background_mask, binary_string=True))
             last_modified = datetime.fromtimestamp(back_mask_fp.stat().st_mtime)
             st.write(f"Last modified: {last_modified.strftime('%d/%-m, %H:%M')}")
 
@@ -186,6 +175,8 @@ def main():
                 # np.save(back_mask_fp, background_mask)
                 # np.save(lens_mask_fp, lens_mask)
                 np.save(arcs_mask_fp, arcs_mask)
+
+        st.plotly_chart(px.imshow(background_and_source, binary_string=True))
 
 
 if __name__ == "__main__":
