@@ -43,9 +43,6 @@ class UNet:
         self.augmentation = tf.keras.Sequential([
             tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
             tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
-            #tf.keras.layers.RandomZoom(
-            #    height_factor=-0.23, width_factor=-0.23, seed=101
-            #),
             tf.keras.layers.RandomCrop(420, 420, seed=101)
         ])
         self.resize = tf.keras.Sequential([
