@@ -18,7 +18,7 @@ def create_mask(pred_mask):
     return pred_mask
 
 
-def evaluate_model(dataset, model, num=19):
+def evaluate_model(dataset, model, num=5):
     """Evaluate model after a run is completed."""
     # TODO: try tf.keras.Model.evaluate()
     if dataset:
@@ -41,7 +41,7 @@ def evaluate_model(dataset, model, num=19):
         return conf_matrix, jacc_score
 
 
-def check_augmented_images(dataset, num=29):
+def check_augmented_images(dataset, num=5):
     """Log training images to check that augmentation worked correctly."""
     if dataset:
         for image, mask in dataset:
