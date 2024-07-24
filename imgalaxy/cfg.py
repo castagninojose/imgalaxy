@@ -10,7 +10,7 @@ REPO_ROOT = PKG_PATH.parent
 config = AutoConfig(search_path=REPO_ROOT)
 
 RESOURCES_DIR = PKG_PATH / "resources"
-DATA_DIR = RESOURCES_DIR / "dataset"
+DATA_DIR = RESOURCES_DIR / "data"
 METADATA_DIR = RESOURCES_DIR / "metadata"
 LOGS_DIR = RESOURCES_DIR / "logs"
 MODELS_DIR = RESOURCES_DIR / "models"
@@ -31,3 +31,5 @@ METADATA_FILENAMES = [
 ]
 CHECKSUMS_FILEPATH = METADATA_DIR / METADATA_FILENAMES[0]
 GALAXIES_CACHE = [x for x in DATA_DIR.glob('*') if x.suffix == '.gz']  # downloaded
+
+LENSING_POC_GALAXIES = str(DATA_DIR / "lensing_poc/galaxy_{}_{}.png")

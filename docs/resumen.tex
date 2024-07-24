@@ -1,0 +1,221 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+%  ************************** AVISO IMPORTANTE **************************    %
+%                                                                            %
+%  Este ejemplo define el formato para el envío de contribuciones a las      %
+%  Reuniones Anuales de la Asociación Argentina de Astronomía, a partir      %
+%  de 2014. Los resúmenes enviados serán publicados sin modificaciones       %
+%  en el Cuaderno de Resúmenes de la Asociación (CRAAA).                     %
+%                                                                            %
+%  Los comentarios en este archivo contienen instrucciones sobre el formato  %
+%  obligatorio del mismo. Por favor léalos.                                  %
+%                                                                            %
+%  No se permite el uso de \newcommand ni definiciones particulares de       %
+%  cada autor.                                                               %
+%                                                                            %
+%  Para compilar este archivo, use 'pdflatex <archivo>'.                     %
+%                                                                            %
+%  ************************** IMPORTANT NOTICE **************************    %
+%                                                                            %
+%  This template defines the format for the submission of contributions      %
+%  to the Annual Meetings of the Argentinian Astronomical Association,       %
+%  since 2014. The submitted abstracts will be published without changes     %
+%  in the Abstract Book of the Association (CRAAA).                          %
+%                                                                            %
+%  The comments in this file give instructions about its mandatory format.   %
+%  Please read them.                                                         %
+%                                                                            %
+%  The use of \newcommand and author's definitions are forbidden.            %
+%                                                                            %
+%  To compile this file, use 'pdflatex <filename>'.                          %
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass[craaa]{baaa}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+%  Paquetes de LaTeX necesarios, por favor no modifique estos comandos. En   %
+%  En caso de que su editor de texto codifique los archivos en un formato    %
+%  distinto a UTF8, cambie la opción correspondiente del paquete 'inputenc'. %
+%                                                                            %
+%  Needed LaTeX packages, please do not change these commands. If your text  %
+%  editor encodes files in a format different than UTF8, change the          %
+%  corresponding option of the package 'inputenc'.                           %
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+ 
+\usepackage[pdftex]{hyperref}
+\usepackage{helvet}
+\usepackage{afterpage}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+%  Seleccione el idioma de su contribución:                                  %
+%                                                                            %
+%  Select the languague of your contribution:                                %
+%                                                                            %
+%  0: Castellano / Spanish                                                   %
+%  1: Inglés / English                                                       %
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\contriblanguage{0}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+%  Seleccione el tipo de contribución solicitada:                            %
+%                                                                            %
+%  Select the requested contribution type:                                   %
+%                                                                            %
+%  1 : Presentación mural / Poster                                           %
+%  2 : Presentación oral / Oral contribution                                 %
+%  3 : Informe invitado / Invited report                                     %
+%  4 : Mesa redonda / Round table                                            %
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\contribtype{1}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  ********************* Área temática / Subject area *********************  %
+%                                                                            %
+%  -Seleccione el área temática de su contribución (opción numérica).        %
+%                                                                            %
+%  -Select the subject area of your contribution (numeric option)            %
+%                                                                            %
+%  1 : SH    - Sol y Heliosfera / Sun and Heliosphere                        %
+%  2 : SSE   - Sistema Solar y Extrasolares  / Solar and Extrasolar Systems  %
+%  3 : AE    - Astrofísica Estelar / Stellar Astrophysics                    %
+%  4 : SE    - Sistemas Estelares / Stellar Systems                          %
+%  5 : MI    - Medio Interestelar / Interstellar Medium                      %
+%  6 : EG    - Estructura Galáctica / Galactic Structure                     %
+%  7 : AEC   - Astrofísica Extragaláctica y Cosmología /                      %
+%              Extragalactic Astrophysics and Cosmology                      %
+%  8 : OCPAE - Objetos Compactos y Procesos de Altas Energías /              %
+%              Compact Objetcs and High-Energy Processes                     %
+%  9 : ICSA  - Instrumentación y Caracterización de Sitios Astronómicos
+%              Instrumentation and Astronomical Site Characterization        %
+% 10 : AGE   - Astrometría y Geodesia Espacial / Astrometry and Space Geodesy %
+% 11 : ASOC  - Astronomía y Sociedad / Astronomy and Society %
+% 12 : O     -  Otros / Other
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\thematicarea{6}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+%  Título. Este debe ser corto e informativo. Debe estar en minúsculas       %
+%  salvo la primer letra y aquellas palabras que siempre se escriben con     %
+%  mayúscula. Utilizar subtítulo solo en caso necesario. Para dividir un     %
+%  título largo en más líneas utilizar el corte de línea (\\).               %
+%                                                                            %
+%  Title. It should be short and informative and should not be capitalized,  %
+%  except for the first letter and any other words that are always           %
+%  capitalized. Please only use subtitle if necessary. In order to split     %
+%  a long \title across two or more lines, please insert linebreaks (\\).    %
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\title{
+    Automatic image segmentation of galaxies and strong gravitational lenses with deep learning
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+%  Lista de autores. Los nombres de los autores deben estar separados por    %
+%  comas, y deben tener el formato A.E. Autor (iniciales apellido(s); sin    %
+%  coma entre apellido e iniciales ni espacios entre las iniciales).         %
+%                                                                            %
+%  Author list. Authors' names must be separated by commas, and stick to     %
+%  the format A.E. Author (initials Family name -neither commas between      %
+%  name and the initials nor blanks between the initials).                   %
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\author{
+    J. Castagnino\inst{1}, L. A. Bignone\inst{2}, J. P. França\inst{4}, S. E. Pedrosa\inst{2}, M. Makler\inst{3} \& L. J. Pellizza \inst{2}
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+% Lista de afiliaciones, por favor ajustese al formato especificado.         %
+%                                                                            %
+% Affiliation list, please conform to the specified format.                  %
+%                                                                            %
+% Ej./E.g.:                                                                  %
+%                                                                            %
+% Departamento de F{\'\i}sica, Facultad de Ciencias Exactas y Naturales, UBA, Argentina
+% Facultad de Ciencias Astron\'omicas y Geof{\'\i}sicas, UNLP, Argentina
+% Facultad de Ciencias Exactas, F{\'\i}sicas y Naturales, UNSJ, Argentina
+% Instituto Argentino de Radioastronom{\'\i}a, CONICET--CICPBA--UNLP, Argentina
+% Instituto de Astrof{\'\i}sica de La Plata, CONICET--UNLP, Argentina
+% Instituto de Astronom{\'\i}a Te\'orica y Experimental, CONICET--UNC, Argentina
+% Instituto de Astronom{\'\i}a y F{\'\i}sica del Espacio, CONICET--UBA, Argentina
+% Instituto de Ciencias Astron\'omicas, de la Tierra y del Espacio, CONICET--UNSJ, Argentina
+% Observatorio Astron\'omico de C\'ordoba, UNC, Argentina
+% Observatorio Astron\'omico F\'elix Aguilar, UNSJ, Argentina
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\institute{
+Departamento de Matemática, Facultad de Ciencias Exactas y Naturales, UBA, Argentina.
+\and
+Instituto de Astronomía y Física del Espacio, CONICET-UBA, Argentina.
+\and
+Internationl Center for Advanced Studies / Instituto de Ciencias Físicas / CONICET-UNSAM, CBPF.
+\and
+Centro Brasileiro de Pesquisas Físicas, Universidade Federal do Rio de Janeiro, Brasil.
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+%  El resumen puede estar escrito en castellano o inglés, a elección del     %
+%  autor. El número máximo de caracteres permitidos es 1500 (mil quinientos),%
+%  contabilizando espacios.                                                  %
+%                                                                            %
+%  The abstract can be written in Spanish or English, at the author's        %
+%  choice. The maximum number of allowed characters is 1500 (one thousand    %
+%  five hundred), counting spaces.                                           %
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\abstract{
+Advancements in image segmentation are essential for analyzing galaxy structures in large-scale surveys. Building on previous efforts that utilized convolutional neural networks for spiral arm detection, this study focuses on training a U-Net model to identify the central bars in galaxies using the Galaxy Zoo 3D dataset. Additionally, we are extending the system to segment strong gravitational lenses by using a combination of real galaxy images and simulated lenses as the training dataset. Here the challenge is to produce masks that are required for the proper inverse modeling of these systems. We are diligently constructing a robust hyperparameter tuning pipeline and improving segmentation metrics through systematic experiments. This approach is designed to enhance the precision and utility of neural networks in distinguishing intricate galaxy features.
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+%  Seleccione las palabras clave que describen su contribución. Las mismas   %
+%  son obligatorias, y deben tomarse de la lista de la American Astronomical %
+%  Society (AAS), que se encuentra en la página web indicada abajo.          %
+%                                                                            %
+%  Select the keywords that describe your contribution. They are mandatory,  %
+%  and must be taken from the list of the American Astronomical Society      %
+%  (AAS), which is available at the webpage quoted below.                    %
+%                                                                            %
+%  https://journals.aas.org/keywords-2013/                                   %
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\keywords{techniques: image processing --- galaxy: structure --- gravitational lensing: strong
+}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                            %
+% Por favor provea una dirección de e-mail de contacto para los lectores.    %
+%                                                                            %
+% Please provide a contact e-mail address for readers.                       %
+%                                                                            %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\contact{castagninojose@gmail.com} 
+
+\begin{document}
+\maketitle
+
+\end{document}
+

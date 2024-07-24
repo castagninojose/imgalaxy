@@ -6,6 +6,7 @@ import keras
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+import wandb
 from sklearn.metrics import confusion_matrix, jaccard_score
 
 tf.config.run_functions_eagerly(True)
@@ -17,13 +18,14 @@ def create_mask(pred_mask):
     return pred_mask
 
 
-def evaluate_model(dataset, model, num=1):
+def evaluate_model(dataset, model, num=5):
     """Evaluate model after a run is completed."""
     # TODO: try tf.keras.Model.evaluate()
     if dataset:
         for image, mask in dataset:
             pred_mask = create_mask(model.predict(image))
             for ind in range(num):
+                wandb.log({"example": [wandb.Image(image[ind]), wandb.Image(mask[ind]), wandb.Image(pred_mask[ind])]})
                 if np.amax(pred_mask[ind].numpy()) == 0:
                     print(2 * '\n')
                     continue
@@ -38,6 +40,15 @@ def evaluate_model(dataset, model, num=1):
                     )
         return conf_matrix, jacc_score
 
+
+def check_augmented_images(dataset, num=5):
+    """Log training images to check that augmentation worked correctly."""
+    if dataset:
+        for image, mask in dataset:
+            for ind in range(num):
+                wandb.log(
+                    {"train_example": [wandb.Image(image[ind]), wandb.Image(mask[ind])]}
+                )
 
 def jaccard(y_true, y_pred):
     """Jaccard index to compute after each epoch."""

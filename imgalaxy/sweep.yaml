@@ -3,25 +3,28 @@ description: spiral arms
 program: train.py
 method: bayes
 metric:
-  name: val_jaccard
+  name: epoch/val_jaccard
   goal: maximize
 parameters:
   loss:
-    values: [sparse_categorical_crossentropy, dice]
+    values: [
+      sparse_categorical_crossentropy,
+      dice, 
+      binary_focal_crossentropy
+    ]
   dropout:
     distribution: uniform
     max: 0.4
-    min: 0.2
+    min: 0.15
   learning_rate: 
     distribution: uniform
     max: 0.01
-    min: 0.001
-  batch_size:
-    values: [32, 64]
+    min: 0.0001
   batch_normalization: 
     values: [False, True]
+  kernel_regularizer:
+    values: [None, l1, l2, l1_l2]
   n_filters:
     values: [64, 128]
   min_vote:
     values: [3]
-

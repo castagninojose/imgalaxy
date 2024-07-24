@@ -4,6 +4,7 @@ import yaml
 import wandb
 from imgalaxy.cfg import PKG_PATH
 from imgalaxy.constants import IMAGE_SIZE, NUM_EPOCHS, THRESHOLD
+# from imgalaxy.helpers import check_augmented_images, evaluate_model
 from imgalaxy.unet import UNet
 
 
@@ -13,7 +14,7 @@ from imgalaxy.unet import UNet
 )
 @click.option(
     "--mask",
-    default='bar_mask',
+    default='spiral_mask',
     show_default=True,
     help="Target mask to use for training.",
 )
@@ -60,6 +61,12 @@ from imgalaxy.unet import UNet
     help="Batch normalization in each double convolution.",
 )
 @click.option(
+    "--kernel-regularization",
+    default=None,
+    show_default=True,
+    help="Use kernel regularization in convolution layers.",
+)
+@click.option(
     "--loss",
     default="sparse_categorical_crossentropy",
     show_default=True,
@@ -72,6 +79,7 @@ def train(
     learning_rate,
     batch_size,
     batch_normalization,
+    kernel_regularization,
     image_size,
     n_filters,
     mask,
@@ -79,7 +87,7 @@ def train(
 ):
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"jose_{mask}",
+        name=f"prueba_jose_{mask}",
         config={
             'loss': loss,
             'dropout': dropout_rate,
@@ -87,6 +95,7 @@ def train(
             'learning_rate': learning_rate,
             'batch_size': batch_size,
             'batch_normalization': batch_normalization,
+            'kernel_regularization': kernel_regularization,
             'size': image_size,
             'n_filters': n_filters,
             'mask': mask,
@@ -95,7 +104,6 @@ def train(
             'group': f"jose_{mask}",
         },
     ):
-
         unet = UNet(
             loss=loss,
             dropout_rate=dropout_rate,
@@ -103,17 +111,22 @@ def train(
             learning_rate=learning_rate,
             batch_size=batch_size,
             batch_normalization=batch_normalization,
+            kernel_regularization=kernel_regularization,
             image_size=image_size,
             n_filters=n_filters,
             mask=mask,
             min_vote=min_vote,
         )
-        history, test_data = unet.train_pipeline()
-        return history, test_data
+        _, _, _ = unet.train_pipeline()
+        # check_augmented_images(train_data)
+        # evaluate_model(test_data, unet.unet_model, num=3)
 
 
 if __name__ == '__main__':
-    #sweep_configs = yaml.safe_load((PKG_PATH / 'sweep.yaml').read_text())
-    #sweep_id = wandb.sweep(sweep=sweep_configs, project="galaxy-segmentation-project")
-    #wandb.agent(sweep_id, function=train)
-    wandb.agent("ganegroup/galaxy-segmentation-project/o6l0jt6i", function=train, count=37)
+    sweep_configs = yaml.safe_load((PKG_PATH / 'sweep.yaml').read_text())
+    sweep_id = wandb.sweep(sweep=sweep_configs, project="galaxy-segmentation-project")
+    wandb.agent(sweep_id, function=train)
+    wandb.agent(
+        f"ganegroup/galaxy-segmentation-project/{sweep_id}", function=train, count=47
+    )
+    #train()
