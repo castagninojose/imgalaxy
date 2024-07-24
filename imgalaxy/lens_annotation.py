@@ -90,7 +90,7 @@ def contours_segment(image: NDArray, levels: list):
     if len(contours[0]) > 1:
         mask = mask - 1 * polygon2mask((64, 64), contours[0][1])
 
-    return mask
+    return mask != 0
 
 
 def main():
@@ -102,9 +102,9 @@ def main():
     with explore:
         ix = st.number_input("Enter galaxy number", min_value=0, max_value=9999)
         background_image = (
-            DES_NO_SOURCE_DATA[ix].transpose(1, 2, 0)[:, :, 1:3].sum(axis=2)
+            DES_NO_SOURCE_DATA[ix].transpose(1, 2, 0)[:, :, 1:4].sum(axis=2)
         )
-        background_and_source = DES_DATA[ix].transpose(1, 2, 0)[:, :, 1:3].sum(axis=2)
+        background_and_source = DES_DATA[ix].transpose(1, 2, 0)[:, :, 1:4].sum(axis=2)
         source_image = background_and_source - background_image
 
         lens_mask_fp: Path = LENSING_MASKS_DIR / f"{ix}_lens_mask.npy"
@@ -133,11 +133,11 @@ def main():
                 step=0.05,
                 value=45.9,
             )
-            # arcs_mask = contours_segment(source_image, [threshold])
-            arcs_mask = segment_background(
-                source_image, thresh=threshold, exclude_pct=37.31
-            )
-            arcs_mask = arcs_mask._data > 0  # pylint: disable=protected-access
+            arcs_mask = contours_segment(source_image, [threshold])
+            # arcs_mask = segment_background(
+            #    source_image, thresh=threshold, exclude_pct=37.31
+            # )
+            # arcs_mask = arcs_mask._data > 0  # pylint: disable=protected-access
             st.plotly_chart(px.imshow(arcs_mask, binary_string=True))
             last_modified = datetime.fromtimestamp(arcs_mask_fp.stat().st_mtime)
             st.write(f"Last modified: {last_modified.strftime('%d/%-m, %H:%M')}")
