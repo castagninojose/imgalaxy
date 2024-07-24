@@ -14,6 +14,8 @@ from photutils.segmentation import (
     SourceFinder,
     make_2dgaussian_kernel,
 )
+from skimage.draw import polygon2mask  # pylint: disable=no-name-in-module
+from skimage.measure import find_contours  # pylint: disable=no-name-in-module
 
 from imgalaxy.cfg import DES_DATA, DES_NO_SOURCE_DATA, LENSING_MASKS_DIR
 
@@ -78,6 +80,19 @@ def segment_background(
     return segment_map
 
 
+def contours_segment(image: NDArray, levels: list):
+    "Build mask of source image using ski.measure's find_contours()."
+    contours: list = []
+    for level in levels:
+        contours.append(find_contours(image, level))
+
+    mask = 1 * polygon2mask((64, 64), contours[0][0])
+    if len(contours[0]) > 1:
+        mask = mask - 1 * polygon2mask((64, 64), contours[0][1])
+
+    return mask
+
+
 def main():
     """Streamlit dashboard app."""
 
@@ -85,36 +100,40 @@ def main():
 
     explore = st.container()
     with explore:
-        galaxy_ix = st.number_input("Enter galaxy number", min_value=0, max_value=9999)
-        background_image = DES_NO_SOURCE_DATA[galaxy_ix].transpose(1, 2, 0).mean(axis=2)
-        background_and_source = DES_DATA[galaxy_ix].transpose(1, 2, 0).mean(axis=2)
+        ix = st.number_input("Enter galaxy number", min_value=0, max_value=9999)
+        background_image = (
+            DES_NO_SOURCE_DATA[ix].transpose(1, 2, 0)[:, :, 1:3].sum(axis=2)
+        )
+        background_and_source = DES_DATA[ix].transpose(1, 2, 0)[:, :, 1:3].sum(axis=2)
         source_image = background_and_source - background_image
 
-        lens_mask_fp: Path = LENSING_MASKS_DIR / f"{galaxy_ix}_lens_mask.npy"
-        arcs_mask_fp: Path = LENSING_MASKS_DIR / f"{galaxy_ix}_arcs_mask.npy"
-        back_mask_fp: Path = LENSING_MASKS_DIR / f"{galaxy_ix}_background_mask.npy"
+        lens_mask_fp: Path = LENSING_MASKS_DIR / f"{ix}_lens_mask.npy"
+        arcs_mask_fp: Path = LENSING_MASKS_DIR / f"{ix}_arcs_mask.npy"
+        back_mask_fp: Path = LENSING_MASKS_DIR / f"{ix}_background_mask.npy"
 
         source_title, background_title = st.columns([2, 3])
         with source_title:
             _, title, _ = st.columns([2.57, 2.31, 1])
             with title:
-                st.write(r"$\textsf{\large Source}$")
+                st.write(r"$\textsf{\Huge Source}$")
 
         with background_title:
-            _, title, _ = st.columns([2.41, 2, 1])
+            _, title, _ = st.columns([2, 2, 1])
             with title:
-                st.write(r"$\textsf{\large Background}$")
+                st.write(r"$\textsf{\Huge Background}$")
 
         arcs_col, source_col, lens_col, galaxy_col, background_col = st.columns(5)
 
         with arcs_col:
             threshold = st.slider(
                 "Select surface level",
-                min_value=-1.0,
-                max_value=80.0,
-                value=44.9,
+                min_value=0.11,
+                max_value=209.99,
                 key='arcs_th',
+                step=0.05,
+                value=45.9,
             )
+            # arcs_mask = contours_segment(source_image, [threshold])
             arcs_mask = segment_background(
                 source_image, thresh=threshold, exclude_pct=37.31
             )
@@ -149,7 +168,9 @@ def main():
                 value=14.14,
                 key='lens_th',
             )
-            segmentation_map = segment_background(background_image, threshold)
+            segmentation_map = segment_background(
+                background_image, threshold, exclude_pct=19.0
+            )
             lens_mask = keep_only_center(segmentation_map)
             st.plotly_chart(px.imshow(lens_mask, binary_string=True))
             last_modified = datetime.fromtimestamp(lens_mask_fp.stat().st_mtime)
@@ -163,7 +184,9 @@ def main():
                 value=1.9,
                 key='back_th',
             )
-            segmentation_map = segment_background(background_image, threshold)
+            segmentation_map = segment_background(
+                background_image, threshold, exclude_pct=19.0
+            )
             background_mask = remove_center_label(segmentation_map)
             st.plotly_chart(px.imshow(background_mask, binary_string=True))
             last_modified = datetime.fromtimestamp(back_mask_fp.stat().st_mtime)
@@ -176,7 +199,9 @@ def main():
                 # np.save(lens_mask_fp, lens_mask)
                 np.save(arcs_mask_fp, arcs_mask)
 
-        st.plotly_chart(px.imshow(background_and_source, binary_string=True))
+        st.plotly_chart(
+            px.imshow(background_and_source, binary_string=True, width=800, height=800)
+        )
 
 
 if __name__ == "__main__":
