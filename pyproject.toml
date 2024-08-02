@@ -20,6 +20,7 @@ tensorflow = "^2.16.1"
 scikit-image = "^0.24.0"
 install = "^1.3.5"
 astropy = "^6.1.1"
+keras-unet-collection = "^0.1.13"
 
 [tool.poetry.group.dev.dependencies]
 pdbpp = "^0.10.3"

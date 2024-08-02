@@ -1,7 +1,7 @@
 # pylint: disable=no-member
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from keras import layers
+from keras import applications, layers
 from wandb.keras import WandbMetricsLogger
 
 from imgalaxy.cfg import MODELS_DIR
@@ -14,6 +14,7 @@ class UNet:
         self,
         loss: str = "sparse_categorical_crossentropy",
         dropout_rate: float = 0.3,
+        depth: float = 1.0,
         num_epochs: int = NUM_EPOCHS,
         learning_rate: float = 0.0011,
         batch_size: int = 32,
@@ -28,6 +29,7 @@ class UNet:
     ):
         self.loss = loss
         self.dropout_rate = dropout_rate
+        self.depth = depth
         self.num_epochs = num_epochs
         self.learning_rate = learning_rate
         self.batch_size = batch_size
@@ -39,7 +41,8 @@ class UNet:
         self.kernel_regularization = kernel_regularization
         self.bias_regularization = bias_regularization
         self.activity_regularization = activity_regularization
-        self.unet_model = self.build_unet_model()
+        # self.unet_model = self.build_unet_model()
+        self.unet_model = self.build_mobilenet_model()
         self.augmentation = tf.keras.Sequential([
             tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
             tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
@@ -135,7 +138,6 @@ class UNet:
 
     def build_unet_model(self):
         inputs = layers.Input(shape=(self.image_size, self.image_size, 3))
-        #inputs = self._augment(seed=123)(inputs, training=True)
 
         f1, p1 = self.downsample_block(inputs, self.n_filters // 2)
         f2, p2 = self.downsample_block(p1, self.n_filters)
@@ -154,6 +156,16 @@ class UNet:
         model = tf.keras.Model(inputs, outputs, name="U-Net")
 
         return model
+
+    def build_mobilenet_model(self):
+        return applications.MobileNet(
+            input_shape=(self.image_size, self.image_size, 3),
+            alpha=self.depth,
+            dropout=self.dropout_rate,
+            pooling='max',
+            classes=2,
+            include_top=False,
+        )
 
     def train_pipeline(self):
         ds_train, ds_val, ds_test = tfds.load(
