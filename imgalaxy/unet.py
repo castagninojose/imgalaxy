@@ -1,9 +1,12 @@
 # pylint: disable=no-member
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from keras import applications, layers
+from keras import layers
+from keras_unet_collection import models
+from tensorflow.keras import Model
 from wandb.keras import WandbMetricsLogger
 
+import wandb
 from imgalaxy.cfg import MODELS_DIR
 from imgalaxy.constants import BUFFER_SIZE, MASK, NUM_EPOCHS, THRESHOLD
 from imgalaxy.helpers import dice, jaccard
@@ -20,8 +23,6 @@ class UNet:
         batch_size: int = 32,
         batch_normalization: bool = False,
         kernel_regularization: str = None,
-        bias_regularization: str = None,
-        activity_regularization: str = None,
         image_size: int = 128,
         n_filters: int = 128,
         mask: str = MASK,
@@ -39,18 +40,19 @@ class UNet:
         self.n_filters = n_filters
         self.mask = mask
         self.kernel_regularization = kernel_regularization
-        self.bias_regularization = bias_regularization
-        self.activity_regularization = activity_regularization
-        # self.unet_model = self.build_unet_model()
-        self.unet_model = self.build_mobilenet_model()
-        self.augmentation = tf.keras.Sequential([
-            tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
-            tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
-            tf.keras.layers.RandomCrop(420, 420, seed=101)
-        ])
-        self.resize = tf.keras.Sequential([
-            layers.Resizing(self.image_size, self.image_size),
-        ])
+        self.unet_model = self.build_unet_model()
+        self.augmentation = tf.keras.Sequential(
+            [
+                tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
+                tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
+                tf.keras.layers.RandomCrop(420, 420, seed=101),
+            ]
+        )
+        self.resize = tf.keras.Sequential(
+            [
+                layers.Resizing(self.image_size, self.image_size),
+            ]
+        )
 
         if self.mask == 'spiral_mask':
             self.TRAIN_LENGTH, self.VAL_SIZE, self.TEST_SIZE = 4883, 1088, 551
@@ -59,18 +61,18 @@ class UNet:
 
     def augment(self, image, mask):
         images_mask = tf.keras.layers.Concatenate(axis=2)([image, mask])
-        images_mask = self.augmentation(images_mask)  
-        
+        images_mask = self.augmentation(images_mask)
+
         image = images_mask[:, :, 0:3]
         mask = images_mask[:, :, 3:]
-        
+
         mask = tf.cast(mask, 'uint8')
-        
+
         return image, mask
 
     def binary_mask(self, mask, threshold: int = THRESHOLD):
         return tf.where(mask < threshold, tf.zeros_like(mask), tf.ones_like(mask))
-    
+
     def load_image(self, datapoint, training=False):
         image = datapoint['image']
         mask = datapoint[self.mask]
@@ -92,9 +94,7 @@ class UNet:
             padding="same",
             activation="relu",
             kernel_initializer="he_normal",
-            kernel_regularizer=self.kernel_regularization,
-            bias_regularizer=self.bias_regularization,
-            activity_regularizer=self.activity_regularization,
+            kernel_regularizer=self.kernel_regularizer,
         )(x)
         if self.batch_normalization:
             x = layers.BatchNormalization()(x)
@@ -105,9 +105,7 @@ class UNet:
             padding="same",
             activation="relu",
             kernel_initializer="he_normal",
-            kernel_regularizer=self.kernel_regularization,
-            bias_regularizer=self.bias_regularization,
-            activity_regularizer=self.activity_regularization,
+            kernel_regularizer=self.kernel_regularizer,
         )(x)
         if self.batch_normalization:
             x = layers.BatchNormalization()(x)
@@ -126,9 +124,7 @@ class UNet:
             3,
             2,
             padding="same",
-            kernel_regularizer=self.kernel_regularization,
-            bias_regularizer=self.bias_regularization,
-            activity_regularizer=self.activity_regularization,
+            kernel_regularizer=self.kernel_regularizer,
         )(x)
         x = layers.concatenate([x, conv_features])
         x = layers.Dropout(self.dropout_rate)(x)
@@ -153,19 +149,9 @@ class UNet:
 
         outputs = layers.Conv2D(2, 1, padding="same", activation="softmax")(u9)
 
-        model = tf.keras.Model(inputs, outputs, name="U-Net")
+        model = Model(inputs, outputs, name="U-Net")
 
         return model
-
-    def build_mobilenet_model(self):
-        return applications.MobileNet(
-            input_shape=(self.image_size, self.image_size, 3),
-            alpha=self.depth,
-            dropout=self.dropout_rate,
-            pooling='max',
-            classes=2,
-            include_top=False,
-        )
 
     def train_pipeline(self):
         ds_train, ds_val, ds_test = tfds.load(
@@ -179,7 +165,7 @@ class UNet:
 
         train_dataset = ds_train.map(
             lambda x: self.load_image(x, training=True),
-            num_parallel_calls=tf.data.AUTOTUNE
+            num_parallel_calls=tf.data.AUTOTUNE,
         )
         test_dataset = ds_test.map(self.load_image, num_parallel_calls=tf.data.AUTOTUNE)
         val_dataset = ds_val.map(self.load_image, num_parallel_calls=tf.data.AUTOTUNE)
@@ -190,17 +176,11 @@ class UNet:
         train_batches = train_batches.prefetch(
             buffer_size=tf.data.experimental.AUTOTUNE
         )
-        test_batches = (
-            test_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat() 
-        )
-        val_batches = (
-            val_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat() 
-        )
+        test_batches = test_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat()
+        val_batches = val_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat()
 
         self.unet_model.compile(
-            optimizer=tf.keras.optimizers.Adam(
-                learning_rate=self.learning_rate
-            ),
+            optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
             loss=self.loss,
             metrics=["accuracy", jaccard, dice],
             jit_compile=True,
@@ -219,10 +199,121 @@ class UNet:
             validation_data=val_batches,
             callbacks=[
                 WandbMetricsLogger(),
-                tf.keras.callbacks.ModelCheckpoint(
-                    MODELS_DIR / f"{self.mask}.keras"
-                ),
+                tf.keras.callbacks.ModelCheckpoint(MODELS_DIR / f"{self.mask}.keras"),
             ],
         )
 
         return model_history, test_batches, train_batches
+
+
+class VNet(UNet):
+    def build_unet_model(self):
+        return models.vnet_2d(
+            (self.image_size, self.image_size, 3),
+            filter_num=[16, 32, 64, 128, 256],
+            n_labels=2,
+            res_num_ini=1,
+            res_num_max=3,
+            activation='PReLU',
+            output_activation='Softmax',
+            batch_norm=self.batch_normalization,
+            pool=False,
+            unpool=False,
+            name='vnet',
+        )
+
+
+class UNetPlus(UNet):
+    def build_unet_model(self):
+        return models.unet_3plus_2d(
+            (self.image_size, self.image_size, 3),
+            n_labels=2,
+            filter_num_down=[64, 128, 256, 512],
+            filter_num_skip='auto',
+            filter_num_aggregate='auto',
+            stack_num_down=2,
+            stack_num_up=1,
+            activation='ReLU',
+            output_activation='Sigmoid',
+            batch_norm=self.batch_normalization,
+            pool='max',
+            unpool=False,
+            deep_supervision=True,
+            name='unet3plus',
+        )
+
+
+class ResUNet(UNet):
+    def build_unet_model(self):
+        return models.resunet_a_2d(
+            (self.image_size, self.image_size, 3),
+            [32, 64, 128, 256, 512, 1024],
+            dilation_num=[1, 3, 15, 31],
+            n_labels=2,
+            aspp_num_down=256,
+            aspp_num_up=128,
+            activation='ReLU',
+            output_activation='Sigmoid',
+            batch_norm=self.batch_normalization,
+            pool=False,
+            unpool='nearest',
+            name='resunet',
+        )
+
+
+class USquaredNet(UNet):
+    def build_unet_model(self):
+        return models.u2net_2d(
+            (None, None, 3),
+            n_labels=2,
+            filter_num_down=[64, 128, 256, 512],
+            activation='ReLU',
+            output_activation='Sigmoid',
+            batch_norm=self.batch_normalization,
+            pool=False,
+            unpool=False,
+            deep_supervision=True,
+            name='u2net',
+        )
+
+
+if __name__ == '__main__':
+    unet = UNet(mask='spiral_mask')
+    with wandb.init(
+        project="galaxy-segmentation-project",
+        name=f"baseline_{unet}_spiral_mask",
+        config={'backbone': unet},
+    ):
+        _, _, _ = unet.train_pipeline()
+
+    unet = VNet(mask='spiral_mask')
+    with wandb.init(
+        project="galaxy-segmentation-project",
+        name=f"baseline_{unet}_spiral_mask",
+        config={'backbone': unet},
+    ):
+        _, _, _ = unet.train_pipeline()
+
+    unet = ResUNet(mask='spiral_mask')
+    with wandb.init(
+        project="galaxy-segmentation-project",
+        name=f"baseline_{unet}_spiral_mask",
+        config={'backbone': unet},
+    ):
+        _, _, _ = unet.train_pipeline()
+
+    unet = UNetPlus(mask='spiral_mask')
+    with wandb.init(
+        project="galaxy-segmentation-project",
+        name=f"baseline_{unet}_spiral_mask",
+        config={'backbone': unet},
+    ):
+        _, _, _ = unet.train_pipeline()
+
+    unet = USquaredNet(mask='spiral_mask')
+    with wandb.init(
+        project="galaxy-segmentation-project",
+        name=f"baseline_{unet}_spiral_mask",
+        config={'backbone': unet},
+    ):
+        _, _, _ = unet.train_pipeline()
