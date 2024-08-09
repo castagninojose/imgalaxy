@@ -10,7 +10,8 @@ services:
       - ${JUPYTER_PORT}:${JUPYTER_PORT}
     expose:
       - ${JUPYTER_PORT}
-    command: 'poetry run python imgalaxy/train.py --mask spiral_mask'
+    command: 'poetry run python imgalaxy/unet.py'
+    #command: 'poetry run python imgalaxy/train.py --mask spiral_mask'
     #command: 'tail -f /dev/null'
     #command: 'poetry run wandb sweep --resume ganegroup/galaxy-segmentation-project/5ozjufhs'
     volumes:

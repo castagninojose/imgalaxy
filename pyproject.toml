@@ -7,7 +7,7 @@ packages = [{include = "imgalaxy"}]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.11,<4"
+python = ">=3.10,<4"
 scikit-learn = "^1.4.0"
 tensorflow-datasets = "^4.9.4"
 python-decouple = "^3.8"

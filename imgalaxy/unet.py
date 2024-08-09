@@ -264,7 +264,7 @@ class ResUNet(UNet):
 class USquaredNet(UNet):
     def build_unet_model(self):
         return models.u2net_2d(
-            (None, None, 3),
+            (self.image_size, self.image_size, 3),
             n_labels=2,
             filter_num_down=[64, 128, 256, 512],
             activation='ReLU',
@@ -278,18 +278,10 @@ class USquaredNet(UNet):
 
 
 if __name__ == '__main__':
-    unet = UNet(mask='spiral_mask')
-    with wandb.init(
-        project="galaxy-segmentation-project",
-        name=f"baseline_{unet}_spiral_mask",
-        config={'backbone': unet},
-    ):
-        _, _, _ = unet.train_pipeline()
-
     unet = VNet(mask='spiral_mask')
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"baseline_{unet}_spiral_mask",
+        name="baseline_vnet_spiral_mask",
         config={'backbone': unet},
     ):
         _, _, _ = unet.train_pipeline()
@@ -297,7 +289,7 @@ if __name__ == '__main__':
     unet = ResUNet(mask='spiral_mask')
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"baseline_{unet}_spiral_mask",
+        name="baseline_resunet_spiral_mask",
         config={'backbone': unet},
     ):
         _, _, _ = unet.train_pipeline()
@@ -305,7 +297,7 @@ if __name__ == '__main__':
     unet = UNetPlus(mask='spiral_mask')
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"baseline_{unet}_spiral_mask",
+        name="baseline_unetplus_spiral_mask",
         config={'backbone': unet},
     ):
         _, _, _ = unet.train_pipeline()
@@ -313,7 +305,17 @@ if __name__ == '__main__':
     unet = USquaredNet(mask='spiral_mask')
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"baseline_{unet}_spiral_mask",
+        name="baseline_usquarednet_spiral_mask",
         config={'backbone': unet},
     ):
         _, _, _ = unet.train_pipeline()
+    
+    #unet = UNet(mask='spiral_mask')
+    #with wandb.init(
+    #    project="galaxy-segmentation-project",
+    #    name="baseline_unet_spiral_mask",
+    #    config={'backbone': unet},
+    #):
+    #    _, _, _ = unet.train_pipeline()
+
+
