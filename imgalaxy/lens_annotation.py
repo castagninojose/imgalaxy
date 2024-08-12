@@ -14,7 +14,7 @@ from photutils.segmentation import (
     make_2dgaussian_kernel,
 )
 
-from imgalaxy.cfg import DES_NO_SOURCE_DATA, LENSING_MASKS_DIR
+from imgalaxy.cfg import DES_DATA, DES_NO_SOURCE_DATA, LENSING_MASKS_DIR
 
 
 def has_center(segmentation: NDArray, label: int) -> bool:
@@ -77,26 +77,24 @@ def segment_background(
     return segment_map
 
 
-def check_already_masked(galaxy_ix):
+def find_similar_masks(galaxy_ix):
     """
-    Check if there is a similar image and return a random index of one if there are any
+    Find all similar image and return the index of a randomly selected one.
     """
-    is_masked: bool = False
     index: int = 0
     image: NDArray = DES_NO_SOURCE_DATA[galaxy_ix]
     copies: list = []
-    for i in range(galaxy_ix):
-        previous_image = DES_NO_SOURCE_DATA[i]
+    for i in range(4000):
+        previous_image: NDArray = DES_NO_SOURCE_DATA[i]
         if np.allclose(previous_image, image, atol=0.5):
-            is_masked = True
             copies.append(i)
 
     if copies:
         index = np.random.choice(copies)
-    return is_masked, index
+    return index
 
 
-def main():
+def background_masks():
     """Streamlit dashboard app."""
 
     st.set_page_config(page_title="Lensing Masks", layout="wide")
@@ -149,7 +147,7 @@ def main():
                     st.write("")
             st.plotly_chart(px.imshow(background_image.sum(axis=2)), theme=None)
 
-    _, mask_ix = check_already_masked(ix)
+    mask_ix = find_similar_masks(ix)
     _, msg_col, _ = st.columns([4.5, 5, 2])
     with msg_col:
         st.write(r":point_down: $\textsf{\LARGE Similar image found}$ :point_down:")
@@ -174,10 +172,121 @@ def main():
         if st.button(f"Reuse saved masks {mask_ix}", key='use_saved'):
             np.save(lens_mask_fp, saved_lens_mask)
             np.save(back_mask_fp, saved_back_mask)
-            st.write(
-                f"Masks {mask_ix} saved as {back_mask_fp.stem} & {lens_mask_fp.stem}"
+            st.write(f"Acá no entramo nunca. Bueno... a veces si {mask_ix}")
+
+
+def segment_source(
+    data: NDArray,
+    thresh1: float = 1.4,
+    thresh2: float = 1.55,
+    npixels: int = 1,
+    exclude_pct=12.5,
+):
+    """Build segmentation map using photutils's Background2D and SourceFinder."""
+    bkg = Background2D(
+        data,
+        (64, 64),
+        filter_size=7,
+        bkg_estimator=MedianBackground(),
+        exclude_percentile=exclude_pct,
+    )
+    _data = data.copy()
+    _data -= bkg.background
+    threshold = thresh1 * bkg.background_rms
+    kernel = make_2dgaussian_kernel(3.0, size=5)
+    convolved_data = convolution.convolve(_data, kernel)
+    finder = SourceFinder(
+        npixels=npixels,
+        connectivity=4,
+        progress_bar=False,
+        nlevels=32,
+        mode='sinh',
+        contrast=10 ** (-6),
+        deblend=False,
+    )
+    source_map = finder(convolved_data, threshold)
+
+    new_bkg = Background2D(
+        data,
+        (64, 64),
+        filter_size=7,
+        bkg_estimator=MedianBackground(),
+        exclude_percentile=exclude_pct,
+        mask=(source_map._data > 0),  # pylint: disable=protected-access
+    )
+
+    __data = data.copy()
+    __data -= new_bkg.background
+
+    threshold = thresh2 * new_bkg.background_rms
+    kernel = make_2dgaussian_kernel(3.0, size=5)
+    convolved_data = convolution.convolve(__data, kernel)
+    finder = SourceFinder(
+        npixels=npixels,
+        connectivity=4,
+        progress_bar=False,
+        nlevels=32,
+        mode='sinh',
+        contrast=10 ** (-6),
+        deblend=False,
+    )
+    mask = finder(convolved_data, threshold)
+
+    return mask
+
+
+def sources_masks():
+    """Streamlit dashboard app."""
+
+    st.set_page_config(page_title="Lensing Sources", layout="wide")
+
+    ix = st.number_input("Enter galaxy number", min_value=0, max_value=9999)
+    background_image = DES_NO_SOURCE_DATA[ix].transpose(1, 2, 0)
+    background_and_source = DES_DATA[ix].transpose(1, 2, 0)
+    source_image = background_and_source - background_image
+    _source_img = source_image.copy()
+    # _source_img[source_image < 19] = 0
+
+    source_mask_fp: Path = LENSING_MASKS_DIR / f"{ix}_source_mask.npy"
+
+    edit_mask = st.container()
+    with edit_mask:
+        galaxy_col, mask_col = st.columns(2)
+        with mask_col:
+            threshold1 = st.slider(
+                "Select surface level",
+                min_value=-1.0,
+                max_value=159.0,
+                value=14.14,
+                key='th1',
+            )
+            threshold2 = st.slider(
+                "Select surface level",
+                min_value=-1.0,
+                max_value=159.0,
+                value=14.14,
+                key='th2',
+            )
+            segmentation_map = segment_source(
+                _source_img.sum(axis=2), threshold1, threshold2, exclude_pct=39.0
+            )
+            # mask = segmentation_map._data
+            st.plotly_chart(px.imshow(segmentation_map), theme=None)
+
+        with galaxy_col:
+            _, save_button_col, _ = st.columns([2, 3, 1])
+            with save_button_col:
+                if st.button("Save this mask", key='save_source'):
+                    np.save(source_mask_fp, segmentation_map)
+                    st.write(f"{source_mask_fp.stem} saved.")
+                else:
+                    st.write("")
+                    st.write("")
+            st.plotly_chart(
+                px.imshow(source_image.sum(axis=2), binary_string=True), theme=None
             )
 
 
 if __name__ == "__main__":
-    main()
+    # background_masks()
+    sources_masks()
