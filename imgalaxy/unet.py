@@ -223,11 +223,15 @@ class VNet(UNet):
         )
 
 
-class UNetPlus(UNet):
+class UNet3Plus(UNet):
     def build_unet_model(self):
         return models.unet_3plus_2d(
             (self.image_size, self.image_size, 3),
             n_labels=2,
+            backbone='VGG16',
+            weights='imagenet',
+            freeze_backbone=True,
+            freeze_batch_norm=True,
             filter_num_down=[64, 128, 256, 512],
             filter_num_skip='auto',
             filter_num_aggregate='auto',
@@ -243,37 +247,42 @@ class UNetPlus(UNet):
         )
 
 
-class ResUNet(UNet):
+class TransUNet(UNet):
     def build_unet_model(self):
-        return models.resunet_a_2d(
+        return models.transunet_2d(
             (self.image_size, self.image_size, 3),
-            [32, 64, 128, 256, 512, 1024],
-            dilation_num=[1, 3, 15, 31],
             n_labels=2,
-            aspp_num_down=256,
-            aspp_num_up=128,
+            backbone='VGG16',
+            weights='imagenet',
+            freeze_backbone=True,
+            freeze_batch_norm=True,
+            filter_num=[64, 128, 256, 512],
             activation='ReLU',
             output_activation='Sigmoid',
             batch_norm=self.batch_normalization,
             pool=False,
-            unpool='nearest',
-            name='resunet',
+            unpool=False,
+            name='transunet',
         )
 
 
-class USquaredNet(UNet):
+class UNetPlus(UNet):
     def build_unet_model(self):
-        return models.u2net_2d(
-            (None, None, 3),
+        return models.unet_plus_2d(
+            (self.image_size, self.image_size, 3),
             n_labels=2,
-            filter_num_down=[64, 128, 256, 512],
+            backbone='VGG16',
+            weights='imagenet',
+            freeze_backbone=True,
+            freeze_batch_norm=True,
+            filter_num=[64, 128, 256, 512],
             activation='ReLU',
             output_activation='Sigmoid',
             batch_norm=self.batch_normalization,
             pool=False,
             unpool=False,
             deep_supervision=True,
-            name='u2net',
+            name='unetplus',
         )
 
 
@@ -300,11 +309,45 @@ class AttentionUNet(UNet):
         )
 
 
+class USquaredNet(UNet):
+    def build_unet_model(self):
+        return models.u2net_2d(
+            (None, None, 3),
+            n_labels=2,
+            filter_num_down=[64, 128, 256, 512],
+            activation='ReLU',
+            output_activation='Sigmoid',
+            batch_norm=self.batch_normalization,
+            pool=False,
+            unpool=False,
+            deep_supervision=True,
+            name='u2net',
+        )
+
+
+class ResUNet(UNet):
+    def build_unet_model(self):
+        return models.resunet_a_2d(
+            (self.image_size, self.image_size, 3),
+            [32, 64, 128, 256, 512, 1024],
+            dilation_num=[1, 3, 15, 31],
+            n_labels=2,
+            aspp_num_down=256,
+            aspp_num_up=128,
+            activation='ReLU',
+            output_activation='Sigmoid',
+            batch_norm=self.batch_normalization,
+            pool=False,
+            unpool='nearest',
+            name='resunet',
+        )
+
+
 if __name__ == '__main__':
     unet = UNet(mask='spiral_mask')
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"baseline_{unet}_spiral_mask",
+        name="baseline_unet_spiral_mask",
         config={'backbone': unet},
     ):
         _, _, _ = unet.train_pipeline()
@@ -312,7 +355,7 @@ if __name__ == '__main__':
     vnet = VNet(mask='spiral_mask')
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"baseline_{vnet}_spiral_mask",
+        name="baseline_vnet_spiral_mask",
         config={'backbone': vnet},
     ):
         _, _, _ = vnet.train_pipeline()
@@ -320,7 +363,7 @@ if __name__ == '__main__':
     resunet = ResUNet(mask='spiral_mask')
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"baseline_{resunet}_spiral_mask",
+        name="baseline_resunet_spiral_mask",
         config={'backbone': resunet},
     ):
         _, _, _ = resunet.train_pipeline()
@@ -328,7 +371,7 @@ if __name__ == '__main__':
     unetplus = UNetPlus(mask='spiral_mask')
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"baseline_{unetplus}_spiral_mask",
+        name="baseline_unetplus_spiral_mask",
         config={'backbone': unetplus},
     ):
         _, _, _ = unetplus.train_pipeline()
@@ -336,7 +379,7 @@ if __name__ == '__main__':
     usquarednet = USquaredNet(mask='spiral_mask')
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"baseline_{usquarednet}_spiral_mask",
+        name="baseline_usquarednet_spiral_mask",
         config={'backbone': usquarednet},
     ):
         _, _, _ = usquarednet.train_pipeline()
