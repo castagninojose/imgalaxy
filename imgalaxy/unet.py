@@ -94,7 +94,7 @@ class UNet:
             padding="same",
             activation="relu",
             kernel_initializer="he_normal",
-            kernel_regularizer=self.kernel_regularizer,
+            kernel_regularizer=self.kernel_regularization,
         )(x)
         if self.batch_normalization:
             x = layers.BatchNormalization()(x)
@@ -105,7 +105,7 @@ class UNet:
             padding="same",
             activation="relu",
             kernel_initializer="he_normal",
-            kernel_regularizer=self.kernel_regularizer,
+            kernel_regularizer=self.kernel_regularization,
         )(x)
         if self.batch_normalization:
             x = layers.BatchNormalization()(x)
@@ -124,7 +124,7 @@ class UNet:
             3,
             2,
             padding="same",
-            kernel_regularizer=self.kernel_regularizer,
+            kernel_regularizer=self.kernel_regularization,
         )(x)
         x = layers.concatenate([x, conv_features])
         x = layers.Dropout(self.dropout_rate)(x)
@@ -299,7 +299,7 @@ class AttentionUNet(UNet):
             attention='add',
             output_activation='Sigmoid',
             batch_norm=self.batch_normalization,
-            backbone='VGG16',
+            backbone='VGG19',
             weights='imagenet',
             freeze_backbone=True,
             freeze_batch_norm=True,
@@ -344,42 +344,65 @@ class ResUNet(UNet):
 
 
 if __name__ == '__main__':
-    unet = UNet(mask='spiral_mask')
+#    vnet = VNet(mask='spiral_mask')
+#    with wandb.init(
+#        project="galaxy-segmentation-project",
+#        name="baseline_vnet_spiral_mask",
+#        config={'backbone': vnet},
+#    ):
+#        _, _, _ = vnet.train_pipeline()
+#    unetplus = UNetPlus(mask='spiral_mask')
+#    with wandb.init(
+#        project="galaxy-segmentation-project",
+#        name="baseline_unetplus_spiral_mask",
+#        config={'backbone': unetplus},
+#    ):
+#        _, _, _ = unetplus.train_pipeline()
+#
+#    unet3plus = UNet3Plus(mask='spiral_mask')
+#    with wandb.init(
+#        project="galaxy-segmentation-project",
+#        name="baseline_unet_3plus_spiral_mask",
+#        config={'backbone': unet3plus},
+#    ):
+#        _, _, _ = unet3plus.train_pipeline()
+#
+#    transunet = TransUNet(mask='spiral_mask')
+#    with wandb.init(
+#        project="galaxy-segmentation-project",
+#        name="baseline_transunet_spiral_mask",
+#        config={'backbone': transunet},
+#    ):
+#        _, _, _ = transunet.train_pipeline()
+#
+    attunet = AttentionUNet(mask='spiral_mask')
     with wandb.init(
         project="galaxy-segmentation-project",
-        name="baseline_unet_spiral_mask",
-        config={'backbone': unet},
+        name="baseline_attention_unet_spiral_mask",
+        config={'backbone': attunet},
     ):
-        _, _, _ = unet.train_pipeline()
+        _, _, _ = attunet.train_pipeline()
+#
+#    resunet = ResUNet(mask='spiral_mask')
+#    with wandb.init(
+#        project="galaxy-segmentation-project",
+#        name="baseline_resunet_spiral_mask",
+#        config={'backbone': resunet},
+#    ):
+#        _, _, _ = resunet.train_pipeline()
 
-    vnet = VNet(mask='spiral_mask')
-    with wandb.init(
-        project="galaxy-segmentation-project",
-        name="baseline_vnet_spiral_mask",
-        config={'backbone': vnet},
-    ):
-        _, _, _ = vnet.train_pipeline()
+#    unet = UNet(mask='spiral_mask')
+#    with wandb.init(
+#        project="galaxy-segmentation-project",
+#        name="baseline_unet_spiral_mask",
+#        config={'backbone': unet},
+#    ):
+#        _, _, _ = unet.train_pipeline()
 
-    resunet = ResUNet(mask='spiral_mask')
-    with wandb.init(
-        project="galaxy-segmentation-project",
-        name="baseline_resunet_spiral_mask",
-        config={'backbone': resunet},
-    ):
-        _, _, _ = resunet.train_pipeline()
-
-    unetplus = UNetPlus(mask='spiral_mask')
-    with wandb.init(
-        project="galaxy-segmentation-project",
-        name="baseline_unetplus_spiral_mask",
-        config={'backbone': unetplus},
-    ):
-        _, _, _ = unetplus.train_pipeline()
-
-    usquarednet = USquaredNet(mask='spiral_mask')
-    with wandb.init(
-        project="galaxy-segmentation-project",
-        name="baseline_usquarednet_spiral_mask",
-        config={'backbone': usquarednet},
-    ):
-        _, _, _ = usquarednet.train_pipeline()
+#    usquarednet = USquaredNet(mask='spiral_mask')
+#    with wandb.init(
+#        project="galaxy-segmentation-project",
+#        name="baseline_usquarednet_spiral_mask",
+#        config={'backbone': usquarednet},
+#    ):
+#        _, _, _ = usquarednet.train_pipeline()
