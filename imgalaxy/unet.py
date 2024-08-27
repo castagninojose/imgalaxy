@@ -1,7 +1,10 @@
 # pylint: disable=no-member
 import tensorflow as tf
 import tensorflow_datasets as tfds
+import wandb
 from keras import layers
+from keras_unet_collection import models
+from tensorflow.keras import Model
 from wandb.keras import WandbMetricsLogger
 
 from imgalaxy.cfg import MODELS_DIR
@@ -10,6 +13,34 @@ from imgalaxy.helpers import dice, jaccard
 
 
 class UNet:
+    """Class to train a segmentation model using tensorflow.keras backend.
+
+    Attributes
+    ----------
+    loss : str, default="sparse_categorical_crossentropy".
+        Name of the loss function to use. See tf.keras.losses.
+    dropout_rate : str, default=0.3.
+        Drop-out regularization rate.
+    num_epochs : int, default=150.
+        Total number of training epochs.
+    batch_size : int, default=32.
+        Batch size used for training.
+    batch_normalization : bool, default=False.
+        Boolean flag to toggle batch normalization.
+    kernel_regularization : str, default=None.
+        Type of kernel regularization (L1, L2 or L1-L2). None (default) means no kernel
+        regularization.
+    image_size : int, default=128.
+        Size of the input image.
+    n_filters : int, default=128.
+        Number of filters to use in the double convolution block.
+    mask : str, default="spiral_mask".
+        Mask to use for training. Either "spiral_mask" or "bar_masks".
+    min_vote : int, default=3.
+        Votes above which a pixel is positively labeled (part of a mask).
+
+    """
+
     def __init__(
         self,
         loss: str = "sparse_categorical_crossentropy",
@@ -19,8 +50,6 @@ class UNet:
         batch_size: int = 32,
         batch_normalization: bool = False,
         kernel_regularization: str = None,
-        bias_regularization: str = None,
-        activity_regularization: str = None,
         image_size: int = 128,
         n_filters: int = 128,
         mask: str = MASK,
@@ -37,17 +66,19 @@ class UNet:
         self.n_filters = n_filters
         self.mask = mask
         self.kernel_regularization = kernel_regularization
-        self.bias_regularization = bias_regularization
-        self.activity_regularization = activity_regularization
         self.unet_model = self.build_unet_model()
-        self.augmentation = tf.keras.Sequential([
-            tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
-            tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
-            tf.keras.layers.RandomCrop(420, 420, seed=101)
-        ])
-        self.resize = tf.keras.Sequential([
-            layers.Resizing(self.image_size, self.image_size),
-        ])
+        self.augmentation = tf.keras.Sequential(
+            [
+                tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
+                tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
+                tf.keras.layers.RandomCrop(420, 420, seed=101),
+            ]
+        )
+        self.resize = tf.keras.Sequential(
+            [
+                layers.Resizing(self.image_size, self.image_size),
+            ]
+        )
 
         if self.mask == 'spiral_mask':
             self.TRAIN_LENGTH, self.VAL_SIZE, self.TEST_SIZE = 4883, 1088, 551
@@ -56,18 +87,18 @@ class UNet:
 
     def augment(self, image, mask):
         images_mask = tf.keras.layers.Concatenate(axis=2)([image, mask])
-        images_mask = self.augmentation(images_mask)  
-        
+        images_mask = self.augmentation(images_mask)
+
         image = images_mask[:, :, 0:3]
         mask = images_mask[:, :, 3:]
-        
+
         mask = tf.cast(mask, 'uint8')
-        
+
         return image, mask
 
     def binary_mask(self, mask, threshold: int = THRESHOLD):
         return tf.where(mask < threshold, tf.zeros_like(mask), tf.ones_like(mask))
-    
+
     def load_image(self, datapoint, training=False):
         image = datapoint['image']
         mask = datapoint[self.mask]
@@ -90,8 +121,6 @@ class UNet:
             activation="relu",
             kernel_initializer="he_normal",
             kernel_regularizer=self.kernel_regularization,
-            bias_regularizer=self.bias_regularization,
-            activity_regularizer=self.activity_regularization,
         )(x)
         if self.batch_normalization:
             x = layers.BatchNormalization()(x)
@@ -103,8 +132,6 @@ class UNet:
             activation="relu",
             kernel_initializer="he_normal",
             kernel_regularizer=self.kernel_regularization,
-            bias_regularizer=self.bias_regularization,
-            activity_regularizer=self.activity_regularization,
         )(x)
         if self.batch_normalization:
             x = layers.BatchNormalization()(x)
@@ -124,8 +151,6 @@ class UNet:
             2,
             padding="same",
             kernel_regularizer=self.kernel_regularization,
-            bias_regularizer=self.bias_regularization,
-            activity_regularizer=self.activity_regularization,
         )(x)
         x = layers.concatenate([x, conv_features])
         x = layers.Dropout(self.dropout_rate)(x)
@@ -135,7 +160,6 @@ class UNet:
 
     def build_unet_model(self):
         inputs = layers.Input(shape=(self.image_size, self.image_size, 3))
-        #inputs = self._augment(seed=123)(inputs, training=True)
 
         f1, p1 = self.downsample_block(inputs, self.n_filters // 2)
         f2, p2 = self.downsample_block(p1, self.n_filters)
@@ -151,7 +175,7 @@ class UNet:
 
         outputs = layers.Conv2D(2, 1, padding="same", activation="softmax")(u9)
 
-        model = tf.keras.Model(inputs, outputs, name="U-Net")
+        model = Model(inputs, outputs, name="U-Net")
 
         return model
 
@@ -167,7 +191,7 @@ class UNet:
 
         train_dataset = ds_train.map(
             lambda x: self.load_image(x, training=True),
-            num_parallel_calls=tf.data.AUTOTUNE
+            num_parallel_calls=tf.data.AUTOTUNE,
         )
         test_dataset = ds_test.map(self.load_image, num_parallel_calls=tf.data.AUTOTUNE)
         val_dataset = ds_val.map(self.load_image, num_parallel_calls=tf.data.AUTOTUNE)
@@ -178,17 +202,11 @@ class UNet:
         train_batches = train_batches.prefetch(
             buffer_size=tf.data.experimental.AUTOTUNE
         )
-        test_batches = (
-            test_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat() 
-        )
-        val_batches = (
-            val_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat() 
-        )
+        test_batches = test_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat()
+        val_batches = val_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat()
 
         self.unet_model.compile(
-            optimizer=tf.keras.optimizers.Adam(
-                learning_rate=self.learning_rate
-            ),
+            optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
             loss=self.loss,
             metrics=["accuracy", jaccard, dice],
             jit_compile=True,
@@ -207,10 +225,95 @@ class UNet:
             validation_data=val_batches,
             callbacks=[
                 WandbMetricsLogger(),
-                tf.keras.callbacks.ModelCheckpoint(
-                    MODELS_DIR / f"{self.mask}.keras"
-                ),
+                tf.keras.callbacks.ModelCheckpoint(MODELS_DIR / f"{self.mask}.keras"),
             ],
         )
 
         return model_history, test_batches, train_batches
+
+
+class TransUNet(UNet):
+    def __init__(self, backbone: str = 'VGG16', **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.backbone = backbone
+
+    def build_unet_model(self):
+        return models.transunet_2d(
+            (self.image_size, self.image_size, 3),
+            n_labels=2,
+            backbone=self.backbone,
+            weights='imagenet',
+            freeze_backbone=True,
+            freeze_batch_norm=True,
+            filter_num=[64, 128, 256, 512],
+            activation='ReLU',
+            output_activation='Sigmoid',
+            batch_norm=self.batch_normalization,
+            pool=False,
+            unpool=False,
+            name='transunet',
+        )
+
+
+class AttentionUNet(UNet):
+    """
+    Variation designed to test different backbones with an Attention UNet
+    (Oktay et al. 2018) as a base model.
+
+    Attributes
+    ----------
+    backbone : str, default="VGG16".
+        Model to use as backbone for the UNet.
+
+    """
+
+    def __init__(self, backbone: str = 'VGG16', **kwargs) -> None:
+        self.backbone = backbone
+        super().__init__(**kwargs)
+
+    def build_unet_model(self):
+        return models.att_unet_2d(
+            (self.image_size, self.image_size, 3),
+            n_labels=2,
+            filter_num=[64, 128, 256, 512, 1024],
+            stack_num_down=2,
+            stack_num_up=2,
+            activation='ReLU',
+            atten_activation='ReLU',
+            attention='add',
+            output_activation='Sigmoid',
+            batch_norm=self.batch_normalization,
+            backbone=self.backbone,
+            weights='imagenet',
+            freeze_backbone=True,
+            freeze_batch_norm=True,
+            pool=False,
+            unpool=False,
+            name='attention_unet',
+        )
+
+
+if __name__ == '__main__':
+    for bbone in [
+        "VGG16",
+        "VGG19",
+        "ResNet50",
+        "ResNet101",
+        "ResNet152",
+        "ResNet50V2",
+        "ResNet101V2",
+        "ResNet152V2",
+        "DenseNet121",
+        "DenseNet169",
+        "DenseNet201",
+        "EfficientNetB7",
+    ]:
+        attunet = AttentionUNet(
+            backbone=bbone, num_epochs=199, batch_normalization=True
+        )
+        with wandb.init(
+            project="galaxy-segmentation-project",
+            name=f"attention_{bbone}_unet_spiral_mask",
+            config={'backbone': bbone},
+        ):
+            _, _, _ = attunet.train_pipeline()
