@@ -1,12 +1,12 @@
 # pylint: disable=no-member
 import tensorflow as tf
 import tensorflow_datasets as tfds
+import wandb
 from keras import layers
 from keras_unet_collection import models
 from tensorflow.keras import Model
 from wandb.keras import WandbMetricsLogger
 
-import wandb
 from imgalaxy.cfg import MODELS_DIR
 from imgalaxy.constants import BUFFER_SIZE, MASK, NUM_EPOCHS, THRESHOLD
 from imgalaxy.helpers import dice, jaccard
@@ -268,8 +268,8 @@ class AttentionUNet(UNet):
     """
 
     def __init__(self, backbone: str = 'VGG16', **kwargs) -> None:
-        super().__init__(**kwargs)
         self.backbone = backbone
+        super().__init__(**kwargs)
 
     def build_unet_model(self):
         return models.att_unet_2d(
@@ -308,10 +308,12 @@ if __name__ == '__main__':
         "DenseNet201",
         "EfficientNetB7",
     ]:
-        attunet = AttentionUNet(backbone=bbone, num_epochs=111)
+        attunet = AttentionUNet(
+            backbone=bbone, num_epochs=199, batch_normalization=True
+        )
         with wandb.init(
             project="galaxy-segmentation-project",
-            name="baseline_attention_unet_spiral_mask",
+            name=f"attention_{bbone}_unet_spiral_mask",
             config={'backbone': bbone},
         ):
             _, _, _ = attunet.train_pipeline()
