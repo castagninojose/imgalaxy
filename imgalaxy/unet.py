@@ -1,12 +1,12 @@
 # pylint: disable=no-member
 import tensorflow as tf
 import tensorflow_datasets as tfds
-import wandb
 from keras import layers
 from keras_unet_collection import models
 from tensorflow.keras import Model
 from wandb.keras import WandbMetricsLogger
 
+import wandb
 from imgalaxy.cfg import MODELS_DIR
 from imgalaxy.constants import BUFFER_SIZE, MASK, NUM_EPOCHS, THRESHOLD
 from imgalaxy.helpers import dice, jaccard
@@ -267,7 +267,27 @@ class AttentionUNet(UNet):
 
     """
 
-    def __init__(self, backbone: str = 'VGG16', **kwargs) -> None:
+    def __init__(
+        self,
+        backbone: str = 'VGG16',
+        attention: str = 'add',
+        activation: str = 'ReLU',
+        atten_activation: str = 'ReLU',
+        output_activation: str = 'Softmax',
+        pool: bool = False,
+        unpool: bool = False,
+        stack_num_down: int = 2,
+        stack_num_up: int = 2,
+        **kwargs,
+    ) -> None:
+        self.attention = attention
+        self.activation = activation
+        self.atten_activation = atten_activation
+        self.output_activation = output_activation
+        self.pool = pool
+        self.unpool = unpool
+        self.stack_num_down = stack_num_down
+        self.stack_num_up = stack_num_up
         self.backbone = backbone
         super().__init__(**kwargs)
 
@@ -276,19 +296,19 @@ class AttentionUNet(UNet):
             (self.image_size, self.image_size, 3),
             n_labels=2,
             filter_num=[64, 128, 256, 512, 1024],
-            stack_num_down=2,
-            stack_num_up=2,
-            activation='ReLU',
-            atten_activation='ReLU',
-            attention='add',
-            output_activation='Sigmoid',
+            stack_num_down=self.stack_num_down,
+            stack_num_up=self.stach_num_up,
+            activation=self.activation,
+            atten_activation=self.atten_activation,
+            attention=self.attention,
+            output_activation=self.output_activation,
             batch_norm=self.batch_normalization,
             backbone=self.backbone,
+            pool=self.pool,
+            unpool=self.unpool,
             weights='imagenet',
             freeze_backbone=True,
             freeze_batch_norm=True,
-            pool=False,
-            unpool=False,
             name='attention_unet',
         )
 
