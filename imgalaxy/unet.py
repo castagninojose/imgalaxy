@@ -7,7 +7,7 @@ import wandb
 from keras import layers
 from keras_unet_collection import models
 from tensorflow.keras import Model
-from wandb.keras import WandbMetricsLogger
+from wandb.keras import WandbMetricsLogger, WandbModelCheckpoint
 
 from imgalaxy.cfg import MODELS_DIR
 from imgalaxy.constants import BUFFER_SIZE, MASK, NUM_EPOCHS, THRESHOLD
@@ -227,7 +227,13 @@ class UNet:
             validation_data=val_batches,
             callbacks=[
                 WandbMetricsLogger(),
-                tf.keras.callbacks.ModelCheckpoint(MODELS_DIR / f"{self.mask}.keras"),
+                # tf.keras.callbacks.ModelCheckpoint(MODELS_DIR / f"{self.mask}.keras"),
+                WandbModelCheckpoint(
+                    MODELS_DIR / f"{self.mask}.keras",
+                    monitor='val_jaccard',
+                    save_best_only=True,
+                    mode='max',
+                ),
             ],
         )
 
