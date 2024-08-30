@@ -196,10 +196,10 @@ def train(
 
 
 if __name__ == '__main__':
-    sweep_configs = yaml.safe_load((PKG_PATH / 'sweep.yaml').read_text())
-    sweep_id = wandb.sweep(sweep=sweep_configs, project="galaxy-segmentation-project")
-    wandb.agent(sweep_id, function=train)
-    wandb.agent(
-        f"ganegroup/galaxy-segmentation-project/{sweep_id}", function=train, count=47
-    )
-    # train()
+    # sweep_configs = yaml.safe_load((PKG_PATH / 'sweep.yaml').read_text())
+    # sweep_id = wandb.sweep(sweep=sweep_configs, project="galaxy-segmentation-project")
+    # wandb.agent(sweep_id, function=train)
+    # wandb.agent(
+    #     f"ganegroup/galaxy-segmentation-project/{sweep_id}", function=train, count=47
+    # )
+    train()
