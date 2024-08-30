@@ -4,6 +4,7 @@ import tensorflow_datasets as tfds
 from keras import layers
 from keras_unet_collection import models
 from tensorflow.keras import Model
+from typing import Union
 from wandb.keras import WandbMetricsLogger
 
 import wandb
@@ -49,7 +50,7 @@ class UNet:
         learning_rate: float = 0.0011,
         batch_size: int = 32,
         batch_normalization: bool = False,
-        kernel_regularization: str = None,
+        kernel_regularization: Union[str, None] = None,
         image_size: int = 128,
         n_filters: int = 128,
         mask: str = MASK,

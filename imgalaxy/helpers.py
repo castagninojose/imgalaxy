@@ -29,15 +29,31 @@ def evaluate_model(dataset, model, num=5):
                 if (
                     jaccard_score(mask, pred_mask) < 0.19
                 ):  # log only cases with bad scores.
+
                     wandb.log(
                         {
-                            "example": [
-                                wandb.Image(image[ind]),
-                                wandb.Image(mask[ind]),
-                                wandb.Image(pred_mask[ind]),
-                            ]
+                            "my_image_key" : wandb.Image(image[ind], masks={
+                                "predictions" : {
+                                    "mask_data" : pred_mask[ind],
+                                    "class_labels" : "spiral arm"
+                                },
+                                "ground_truth" : {
+                                    "mask_data" : mask[ind],
+                                    "class_labels" : "spiral arm"
+                                }
+                            })
                         }
                     )
+
+#                    wandb.log(
+#                        {
+#                            "example": [
+#                                wandb.Image(image[ind]),
+#                                wandb.Image(mask[ind]),
+#                                wandb.Image(pred_mask[ind]),
+#                            ]
+#                        }
+#                    )
                 if np.amax(pred_mask[ind].numpy()) == 0:
                     print(2 * '\n')
                     continue
