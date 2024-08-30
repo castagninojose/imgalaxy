@@ -1,7 +1,7 @@
 import click
+import wandb
 import yaml  # type: ignore
 
-import wandb
 from imgalaxy.cfg import PKG_PATH
 from imgalaxy.constants import IMAGE_SIZE, NUM_EPOCHS, THRESHOLD
 from imgalaxy.helpers import check_augmented_images, evaluate_model
@@ -107,12 +107,6 @@ from imgalaxy.unet import AttentionUNet
     default=False,
     show_default=True,
     help="True or 'bilinear' for Upsampling2D with bilinear interpolation, 'nearest' for Upsampling2D with nearest interpolation. False for Conv2DTranspose + batch norm + activation..",
-)
-@click.option(
-    "--filter-num",
-    default=[64, 128, 256, 512, 1024],
-    show_default=True,
-    help="A list that defines the number of filters for each down and upsampling levels.",
 )
 @click.option(
     "--stack-num-down",

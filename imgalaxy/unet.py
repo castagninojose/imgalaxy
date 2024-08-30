@@ -1,13 +1,14 @@
 # pylint: disable=no-member
+from typing import Union
+
 import tensorflow as tf
 import tensorflow_datasets as tfds
+import wandb
 from keras import layers
 from keras_unet_collection import models
 from tensorflow.keras import Model
-from typing import Union
 from wandb.keras import WandbMetricsLogger
 
-import wandb
 from imgalaxy.cfg import MODELS_DIR
 from imgalaxy.constants import BUFFER_SIZE, MASK, NUM_EPOCHS, THRESHOLD
 from imgalaxy.helpers import dice, jaccard
@@ -298,7 +299,7 @@ class AttentionUNet(UNet):
             n_labels=2,
             filter_num=[64, 128, 256, 512, 1024],
             stack_num_down=self.stack_num_down,
-            stack_num_up=self.stach_num_up,
+            stack_num_up=self.stack_num_up,
             activation=self.activation,
             atten_activation=self.atten_activation,
             attention=self.attention,
