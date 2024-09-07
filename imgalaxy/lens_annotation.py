@@ -180,7 +180,7 @@ def segment_source(
     thresh1: float = 1.4,
     thresh2: float = 1.55,
     npixels: int = 1,
-    exclude_pct=12.5,
+    exclude_pct=39.5,
 ):
     """Build segmentation map using photutils's Background2D and SourceFinder."""
     bkg = Background2D(
@@ -193,7 +193,7 @@ def segment_source(
     _data = data.copy()
     _data -= bkg.background
     threshold = thresh1 * bkg.background_rms
-    kernel = make_2dgaussian_kernel(3.0, size=5)
+    kernel = make_2dgaussian_kernel(3.0, size=7)
     convolved_data = convolution.convolve(_data, kernel)
     finder = SourceFinder(
         npixels=npixels,
@@ -219,7 +219,7 @@ def segment_source(
     __data -= new_bkg.background
 
     threshold = thresh2 * new_bkg.background_rms
-    kernel = make_2dgaussian_kernel(3.0, size=5)
+    kernel = make_2dgaussian_kernel(3.0, size=3)
     convolved_data = convolution.convolve(__data, kernel)
     finder = SourceFinder(
         npixels=npixels,
@@ -255,35 +255,57 @@ def sources_masks():
         with mask_col:
             threshold1 = st.slider(
                 "Select surface level",
-                min_value=-1.0,
-                max_value=159.0,
-                value=14.14,
+                min_value=1.0,
+                max_value=29.0,
+                value=1.414,
                 key='th1',
             )
             threshold2 = st.slider(
                 "Select surface level",
-                min_value=-1.0,
-                max_value=159.0,
-                value=14.14,
+                min_value=1.0,
+                max_value=720.0,
+                value=11.14,
                 key='th2',
             )
             segmentation_map = segment_source(
-                _source_img.sum(axis=2), threshold1, threshold2, exclude_pct=39.0
+                _source_img[:, :, 1:4].sum(axis=2),
+                threshold1,
+                threshold2,
+                exclude_pct=39.0,
             )
             # mask = segmentation_map._data
-            st.plotly_chart(px.imshow(segmentation_map), theme=None)
+            st.plotly_chart(
+                px.imshow(segmentation_map, height=737, width=737),
+                theme=None,
+                use_container_width=True,
+            )
 
         with galaxy_col:
             _, save_button_col, _ = st.columns([2, 3, 1])
             with save_button_col:
+                st.write("")
+                st.write("")
+                st.write("")
+                st.write("")
+                st.write("")
+                st.write("")
+                st.write("")
                 if st.button("Save this mask", key='save_source'):
                     np.save(source_mask_fp, segmentation_map)
                     st.write(f"{source_mask_fp.stem} saved.")
                 else:
                     st.write("")
                     st.write("")
+            # fig, ax = plt.subplots()
+            # ax.imshow(ski.color.label2rgb(segmentation_map._data, _source_img[:, :, 1:4].sum(axis=2)))
+            # st.pyplot(fig)
+
             st.plotly_chart(
-                px.imshow(source_image.sum(axis=2), binary_string=True), theme=None
+                px.imshow(
+                    source_image.sum(axis=2), height=737, width=737, binary_string=True
+                ),
+                use_container_width=True,
+                theme=None,
             )
 
 
