@@ -2,5 +2,6 @@
 /imgalaxy/download-logs.log
 /imgalaxy/resources/checksums.sha1sum
 /imgalaxy/resources/logs/
-/imgalaxy/resources/dataset/
 /imgalaxy/resources/checksums.sha1sum
+/imgalaxy/wandb/
+/imgalaxy/resources/dataset/
