@@ -6,9 +6,8 @@ import keras
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from sklearn.metrics import confusion_matrix, jaccard_score
-
 import wandb
+from sklearn.metrics import confusion_matrix, jaccard_score
 
 tf.config.run_functions_eagerly(True)
 
@@ -26,18 +25,34 @@ def evaluate_model(dataset, model, num=5):
         for image, mask in dataset:
             pred_mask = create_mask(model.predict(image))
             for ind in range(num):
-                if (
-                    jaccard_score(mask, pred_mask) < 0.19
-                ):  # log only cases with bad scores.
-                    wandb.log(
-                        {
-                            "example": [
-                                wandb.Image(image[ind]),
-                                wandb.Image(mask[ind]),
-                                wandb.Image(pred_mask[ind]),
-                            ]
-                        }
-                    )
+                # wandb.log(
+                #    {
+                #        ind: wandb.Image(
+                #            image[ind],
+                #            masks={
+                #                "predictions": {
+                #                    "mask_data": pred_mask[ind],
+                #                    "class_labels": {0: "sky", 1: "spiral arm"},
+                #                },
+                #                "ground_truth": {
+                #                    "mask_data": mask[ind],
+                #                    "class_labels": {0: "sky", 1: "spiral arm"},
+                #                },
+                #            },
+                #        )
+                #    }
+                # )
+
+                wandb.log(
+                    {
+                        "example": [
+                            wandb.Image(image[ind]),
+                            wandb.Image(mask[ind]),
+                            wandb.Image(pred_mask[ind]),
+                        ]
+                    }
+                )
+
                 if np.amax(pred_mask[ind].numpy()) == 0:
                     print(2 * '\n')
                     continue
