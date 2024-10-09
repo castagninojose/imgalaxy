@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import importlib_resources
+import numpy as np
 from decouple import AutoConfig
 
 PKG_PATH = importlib_resources.files("imgalaxy")
@@ -14,6 +15,7 @@ DATA_DIR = RESOURCES_DIR / "data"
 METADATA_DIR = RESOURCES_DIR / "metadata"
 LOGS_DIR = RESOURCES_DIR / "logs"
 MODELS_DIR = RESOURCES_DIR / "models"
+LENSING_MASKS_DIR = DATA_DIR / "lensing_masks"
 
 Path(RESOURCES_DIR).mkdir(exist_ok=True, parents=True)
 Path(DATA_DIR).mkdir(exist_ok=True, parents=True)
@@ -33,3 +35,6 @@ CHECKSUMS_FILEPATH = METADATA_DIR / METADATA_FILENAMES[0]
 GALAXIES_CACHE = [x for x in DATA_DIR.glob('*') if x.suffix == '.gz']  # downloaded
 
 LENSING_POC_GALAXIES = str(DATA_DIR / "lensing_poc/galaxy_{}_{}.png")
+
+DES_DATA = np.load(DATA_DIR / 'DES' / 'CONFIGURATION_1_images.npy')
+DES_NO_SOURCE_DATA = np.load(DATA_DIR / 'DES_no_source' / 'CONFIGURATION_1_images.npy')
