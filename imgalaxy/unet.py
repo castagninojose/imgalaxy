@@ -11,7 +11,7 @@ from tensorflow.keras import Model
 from wandb.keras import WandbMetricsLogger
 
 from imgalaxy.cfg import MODELS_DIR
-from imgalaxy.constants import BUFFER_SIZE, MASK, NUM_EPOCHS, THRESHOLD
+from imgalaxy.constants import BUFFER_SIZE, MASK, MIN_VOTE, NUM_EPOCHS, THRESHOLD
 from imgalaxy.helpers import dice, jaccard
 
 
@@ -51,12 +51,12 @@ class UNet:
         num_epochs: int = NUM_EPOCHS,
         learning_rate: float = 0.0011,
         batch_size: int = 32,
-        batch_normalization: bool = False,
+        batch_normalization: bool = True,
         kernel_regularization: Union[str, None] = None,
         image_size: int = 128,
         n_filters: int = 128,
         mask: str = MASK,
-        min_vote: int = 3,
+        min_vote: int = MIN_VOTE,
     ):
         self.loss = loss
         self.dropout_rate = dropout_rate
@@ -240,12 +240,6 @@ class UNet:
                     save_best_only=False,
                     mode='max',
                 ),
-                # WandbModelCheckpoint(
-                #     MODELS_DIR / "{val_jaccard:.2f}.keras",
-                #     monitor='val_jaccard',
-                #     save_best_only=True,
-                #     mode='max',
-                # ),
             ],
         )
         now = datetime.now().strftime("%Y%m%d_%H:%M")
@@ -336,26 +330,17 @@ class AttentionUNet(UNet):
 
 
 if __name__ == '__main__':
-    for bbone in [
-        "VGG16",
-        "VGG19",
-        "ResNet50",
-        "ResNet101",
-        "ResNet152",
-        "ResNet50V2",
-        "ResNet101V2",
-        "ResNet152V2",
-        "DenseNet121",
-        "DenseNet169",
-        "DenseNet201",
-        "EfficientNetB7",
-    ]:
-        attunet = AttentionUNet(
-            backbone=bbone, num_epochs=199, batch_normalization=True
-        )
-        with wandb.init(
-            project="galaxy-segmentation-project",
-            name=f"attention_{bbone}_unet_spiral_mask",
-            config={'backbone': bbone},
-        ):
-            _, _, _ = attunet.train_pipeline()
+    spirals_unet = UNet(
+        batch_normalization=True,
+        dropout_rate=0.36969,
+        learning_rate=0.009001512803560622,
+        loss='binary_focal_crossentropy',
+        n_filters=64,
+    )
+
+    with wandb.init(
+        project="galaxy-segmentation-project",
+        name="spiral_mask",
+        config={"model": "attention unet", "backbone": "resnet101v2"},
+    ):
+        _, _, _ = spirals_unet.train_pipeline()

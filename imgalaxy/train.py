@@ -2,6 +2,7 @@ import click
 import wandb
 import yaml  # type: ignore
 
+from imgalaxy.cfg import PKG_PATH
 from imgalaxy.constants import IMAGE_SIZE, NUM_EPOCHS, THRESHOLD
 from imgalaxy.helpers import check_augmented_images, evaluate_model
 from imgalaxy.unet import AttentionUNet
@@ -190,15 +191,15 @@ def train(
             stack_num_up=stack_num_up,
         )
         _, test_data, train_data = unet.train_pipeline()
-        # check_augmented_images(train_data)
+        check_augmented_images(train_data)
         evaluate_model(test_data, unet.unet_model, num=7)
 
 
 if __name__ == '__main__':
-    # sweep_configs = yaml.safe_load((PKG_PATH / 'sweep.yaml').read_text())
-    # sweep_id = wandb.sweep(sweep=sweep_configs, project="galaxy-segmentation-project")
-    # wandb.agent(sweep_id, function=train)
-    # wandb.agent(
-    #     f"ganegroup/galaxy-segmentation-project/{sweep_id}", function=train, count=47
-    # )
-    train()
+    sweep_configs = yaml.safe_load((PKG_PATH / 'sweep.yaml').read_text())
+    sweep_id = wandb.sweep(sweep=sweep_configs, project="galaxy-segmentation-project")
+    wandb.agent(sweep_id, function=train)
+    wandb.agent(
+        f"ganegroup/galaxy-segmentation-project/{sweep_id}", function=train, count=47
+    )
+    # train()
