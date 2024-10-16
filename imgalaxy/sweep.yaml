@@ -6,12 +6,12 @@ metric:
   name: epoch/val_jaccard
   goal: maximize
 parameters:
-  #loss:
-  #  values: [
-      # sparse_categorical_crossentropy,
-      # dice, 
-      # binary_focal_crossentropy
-  #  ]
+  loss:
+    values: [
+      sparse_categorical_crossentropy,
+      dice, 
+      binary_focal_crossentropy
+    ]
   loss_alpha:
     distribution: uniform
     max: 1.0
@@ -34,20 +34,36 @@ parameters:
     min: 0.001
   batch_normalization: 
     values: [
-      # False,
+      False,
       True,
     ]
   kernel_regularizer:
     values: [
       None,
-      # l1,
-      # l2,
-      # l1_l2
+      l1,
+      l2,
+      l1_l2
     ]
   n_filters:
     values: [
       64,
-      # 128,
+      128,
     ]
   min_vote:
-    values: [3]
+    values: [3, 4]
+  activation:
+    values: ['ReLU', 'Softmax']
+  output_activation:
+    values: ['ReLU', 'Softmax', 'Sigmoid', None]
+  atten_activation:
+    values: ['ReLU', 'Softmax', 'Sigmoid', None]
+  attention:
+    values: ["add", "multiply"]
+  unpool:
+    values: [True, False, 'bilinear', 'nearest']
+  pool:
+    values: [True, False, 'max', 'ave']
+  stack_num_down:
+    values: [2, 3, 5, 7]
+  stack_num_up:
+    values: [2, 3, 5, 7]

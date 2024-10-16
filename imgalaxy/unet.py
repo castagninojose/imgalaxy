@@ -1,4 +1,7 @@
 # pylint: disable=no-member
+from datetime import datetime
+from typing import Union
+
 import tensorflow as tf
 import tensorflow_datasets as tfds
 import wandb
@@ -8,7 +11,7 @@ from tensorflow.keras import Model
 from wandb.keras import WandbMetricsLogger
 
 from imgalaxy.cfg import MODELS_DIR
-from imgalaxy.constants import BUFFER_SIZE, MASK, NUM_EPOCHS, THRESHOLD
+from imgalaxy.constants import BUFFER_SIZE, MASK, MIN_VOTE, NUM_EPOCHS, THRESHOLD
 from imgalaxy.helpers import dice, jaccard
 
 
@@ -48,12 +51,12 @@ class UNet:
         num_epochs: int = NUM_EPOCHS,
         learning_rate: float = 0.0011,
         batch_size: int = 32,
-        batch_normalization: bool = False,
-        kernel_regularization: str = None,
+        batch_normalization: bool = True,
+        kernel_regularization: Union[str, None] = None,
         image_size: int = 128,
         n_filters: int = 128,
         mask: str = MASK,
-        min_vote: int = 3,
+        min_vote: int = MIN_VOTE,
     ):
         self.loss = loss
         self.dropout_rate = dropout_rate
@@ -225,9 +228,22 @@ class UNet:
             validation_data=val_batches,
             callbacks=[
                 WandbMetricsLogger(),
-                tf.keras.callbacks.ModelCheckpoint(MODELS_DIR / f"{self.mask}.keras"),
+                tf.keras.callbacks.ModelCheckpoint(
+                    MODELS_DIR / f"best_{self.mask}.keras",
+                    monitor='val_jaccard',
+                    save_best_only=True,
+                    mode='max',
+                ),
+                tf.keras.callbacks.ModelCheckpoint(
+                    MODELS_DIR / f"last_{self.mask}.keras",
+                    monitor='val_jaccard',
+                    save_best_only=False,
+                    mode='max',
+                ),
             ],
         )
+        now = datetime.now().strftime("%Y%m%d_%H:%M")
+        self.unet_model.save(MODELS_DIR / f"{self.mask}_{now}.keras")
 
         return model_history, test_batches, train_batches
 
@@ -267,7 +283,27 @@ class AttentionUNet(UNet):
 
     """
 
-    def __init__(self, backbone: str = 'VGG16', **kwargs) -> None:
+    def __init__(
+        self,
+        backbone: str = 'VGG16',
+        attention: str = 'add',
+        activation: str = 'ReLU',
+        atten_activation: str = 'ReLU',
+        output_activation: str = 'Softmax',
+        pool: bool = False,
+        unpool: bool = False,
+        stack_num_down: int = 2,
+        stack_num_up: int = 2,
+        **kwargs,
+    ) -> None:
+        self.attention = attention
+        self.activation = activation
+        self.atten_activation = atten_activation
+        self.output_activation = output_activation
+        self.pool = pool
+        self.unpool = unpool
+        self.stack_num_down = stack_num_down
+        self.stack_num_up = stack_num_up
         self.backbone = backbone
         super().__init__(**kwargs)
 
@@ -276,44 +312,35 @@ class AttentionUNet(UNet):
             (self.image_size, self.image_size, 3),
             n_labels=2,
             filter_num=[64, 128, 256, 512, 1024],
-            stack_num_down=2,
-            stack_num_up=2,
-            activation='ReLU',
-            atten_activation='ReLU',
-            attention='add',
-            output_activation='Sigmoid',
+            stack_num_down=self.stack_num_down,
+            stack_num_up=self.stack_num_up,
+            activation=self.activation,
+            atten_activation=self.atten_activation,
+            attention=self.attention,
+            output_activation=self.output_activation,
             batch_norm=self.batch_normalization,
             backbone=self.backbone,
+            pool=self.pool,
+            unpool=self.unpool,
             weights='imagenet',
             freeze_backbone=True,
             freeze_batch_norm=True,
-            pool=False,
-            unpool=False,
             name='attention_unet',
         )
 
 
 if __name__ == '__main__':
-    for bbone in [
-        "VGG16",
-        "VGG19",
-        "ResNet50",
-        "ResNet101",
-        "ResNet152",
-        "ResNet50V2",
-        "ResNet101V2",
-        "ResNet152V2",
-        "DenseNet121",
-        "DenseNet169",
-        "DenseNet201",
-        "EfficientNetB7",
-    ]:
-        attunet = AttentionUNet(
-            backbone=bbone, num_epochs=199, batch_normalization=True
-        )
-        with wandb.init(
-            project="galaxy-segmentation-project",
-            name=f"attention_{bbone}_unet_spiral_mask",
-            config={'backbone': bbone},
-        ):
-            _, _, _ = attunet.train_pipeline()
+    spirals_unet = UNet(
+        batch_normalization=True,
+        dropout_rate=0.36969,
+        learning_rate=0.009001512803560622,
+        loss='binary_focal_crossentropy',
+        n_filters=64,
+    )
+
+    with wandb.init(
+        project="galaxy-segmentation-project",
+        name="spiral_mask",
+        config={"model": "attention unet", "backbone": "resnet101v2"},
+    ):
+        _, _, _ = spirals_unet.train_pipeline()
