@@ -2,10 +2,8 @@
 from typing import Callable, Union
 
 import tensorflow as tf
-import tensorflow_datasets as tfds
 
-from imgalaxy.constants import BUFFER_SIZE, MASK, MIN_VOTE, NUM_EPOCHS, THRESHOLD
-from imgalaxy.helpers import dice, jaccard
+from imgalaxy.constants import THRESHOLD
 
 
 def binarize_mask(mask, threshold: int):
@@ -88,7 +86,7 @@ class GZ3DPipeline:
         mask = tf.clip_by_value(mask, clip_value_min=0, clip_value_max=self.clip_votes_max)
 
         if self.binary_threshold:
-            mask = binarize_mask(mask, self.binary_threshold)
+            mask = binarize_mask(mask, THRESHOLD)
 
         if not self.sparse:
             if self.binary_threshold:
@@ -122,11 +120,16 @@ class GZ3DPipeline:
 
 class AugmentLayer(tf.keras.layers.Layer):
     """
-    A custom Keras layer for applying augmentations to both images and masks.
-    This layer ensures that the same augmentations are applied to both images and masks
-    during training. The augmentations are specified as a list of functions
-    Attributes:
-        augmentations (list): A list of augmentation functions or keras image augmentation layers to be applied to the images and masks.
+    A custom Keras layer for applying augmentations to both images and masks. This layer ensures
+    that the same augmentations are applied to both images and masks during training. The
+    augmentations are specified as a list of functions
+
+    Attributes
+    ----------
+    augmentations : list
+        A list of augmentation functions or keras image augmentation layers to be applied to the
+        images and masks.
+
     """
 
     def __init__(self, augmentations):
@@ -216,102 +219,3 @@ class AugmentedSegmentationModel(tf.keras.Model):
 
         # Return a dictionary with loss and all metrics
         return {m.name: m.result() for m in self.metrics}
-
-
-if __name__ == '__main__':
-    from keras_unet_collection import losses, models
-    from tensorflow.keras.applications.vgg16 import preprocess_input
-
-    _segmentation_model = models.att_unet_2d(
-        (128, 128, 3),
-        filter_num=[64, 128, 256, 512, 1024],
-        n_labels=2,
-        stack_num_down=2,
-        stack_num_up=2,
-        activation='ReLU',
-        atten_activation='ReLU',
-        attention='add',
-        output_activation='Sigmoid',
-        batch_norm=True,
-        pool=False,
-        unpool=False,
-        backbone='vgg16',
-        weights="imagenet",
-        freeze_backbone=True,
-        freeze_batch_norm=True,
-        name='attunet',
-    )
-
-    model = AugmentedSegmentationModel(
-        augmentations=[
-            tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
-            tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
-            tf.keras.layers.RandomZoom(height_factor=(-0.2, +0.2)),
-        ],
-        segmentation_model=_segmentation_model,
-    )
-
-    MASK = "spiral_mask"
-    MIN_VOTE = 3
-    STEPS_PER_EPOCH = 153
-    VALIDATION_STEPS = 32
-    NUM_EPOCHS = 200
-
-    pipeline = GZ3DPipeline(
-        size=128,
-        mask_key=MASK,
-        preprocess_input=preprocess_input,
-        binary_threshold=MIN_VOTE,
-        clip_votes_max=6,
-        sparse=False,
-        shuffle_buffer_size=1000,
-        cache=True,
-        prefetch=True,
-    )
-    ds_train, ds_val, ds_test = tfds.load(
-        'galaxy_zoo3d', split=['train[:75%]', 'train[75%:90%]', 'train[90%:]']
-    )
-
-    ds_train = ds_train.filter(lambda x: tf.reduce_max(x[MASK]) >= MIN_VOTE)
-    ds_val = ds_val.filter(lambda x: tf.reduce_max(x[MASK]) >= MIN_VOTE)
-    ds_test = ds_test.filter(lambda x: tf.reduce_max(x[MASK]) >= MIN_VOTE)
-
-    train_batches = pipeline(ds_train)
-    val_batches = pipeline(ds_val)
-    _loss = losses.CategoricalFocalCrossentropy(
-        alpha=[0.25, 0.75], gamma=0.1, label_smoothing=0.25, from_logits=False
-    )
-
-    model.compile(
-        loss=_loss,
-        # optimizer=tf.keras.optimizers.SGD(learning_rate=1e-1),
-        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-2),
-        metrics=[
-            tf.keras.metrics.IoU(
-                num_classes=2,
-                target_class_ids=[0],
-                sparse_y_true=False,
-                sparse_y_pred=False,
-                name="IoU_0",
-            ),
-            tf.keras.metrics.IoU(
-                num_classes=2,
-                target_class_ids=[1],
-                sparse_y_true=False,
-                sparse_y_pred=False,
-                name="IoU_1",
-            ),
-            tf.keras.metrics.MeanIoU(
-                num_classes=2, sparse_y_true=False, sparse_y_pred=False, name="MeanIoU"
-            ),
-            # jaccard,
-            # dice
-        ],
-    )
-    model_history = model.fit(
-        train_batches,
-        epochs=NUM_EPOCHS,
-        # steps_per_epoch=STEPS_PER_EPOCH,
-        # validation_steps=VALIDATION_STEPS,
-        validation_data=val_batches,
-    )
