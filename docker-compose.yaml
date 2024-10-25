@@ -11,7 +11,7 @@ services:
     expose:
       - ${JUPYTER_PORT}
     # command: 'poetry run python imgalaxy/unet.py'
-    command: 'poetry run python imgalaxy/train.py --mask bar_mask'
+    command: 'poetry run python imgalaxy/train.py'
     # command: 'tail -f /dev/null'
     # command: 'poetry run wandb sweep --resume ganegroup/galaxy-segmentation-project/5ozjufhs'
     volumes:
