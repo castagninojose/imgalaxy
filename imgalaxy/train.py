@@ -65,7 +65,7 @@ def train(
         segmentation_model = models.att_unet_2d(
             (IMAGE_SIZE, IMAGE_SIZE, 3),
             filter_num=[64, 128, 256, 512, 1024],
-            n_labels=2,
+            n_labels=3,
             stack_num_down=stack_num_down,
             stack_num_up=stack_num_up,
             activation=activation,
@@ -75,7 +75,7 @@ def train(
             batch_norm=batch_norm,
             pool=pool,
             unpool=unpool,
-            backbone='vgg16',
+            backbone='VGG16',
             weights="imagenet",
             freeze_backbone=True,
             freeze_batch_norm=True,
@@ -120,21 +120,21 @@ def train(
             optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
             metrics=[
                 tf.keras.metrics.IoU(
-                    num_classes=2,
+                    num_classes=3,
                     target_class_ids=[0],
                     sparse_y_true=False,
                     sparse_y_pred=False,
                     name="IoU_0",
                 ),
                 tf.keras.metrics.IoU(
-                    num_classes=2,
+                    num_classes=3,
                     target_class_ids=[1],
                     sparse_y_true=False,
                     sparse_y_pred=False,
                     name="IoU_1",
                 ),
                 tf.keras.metrics.MeanIoU(
-                    num_classes=2, sparse_y_true=False, sparse_y_pred=False, name="MeanIoU"
+                    num_classes=3, sparse_y_true=False, sparse_y_pred=False, name="MeanIoU"
                 ),
             ],
         )

@@ -81,11 +81,17 @@ class GZ3DPipeline:
         else:
             image = tf.cast(image, tf.float32) / 255.0
 
-        mask = example[self.mask_key]
+        spiral_mask = example["spiral_mask"]
+        bar_mask = example["bar_mask"]
 
-        mask = tf.clip_by_value(mask, clip_value_min=0, clip_value_max=self.clip_votes_max)
+        spiral_mask = tf.clip_by_value(
+            spiral_mask, clip_value_min=0, clip_value_max=self.clip_votes_max
+        )
+        bar_mask = tf.clip_by_value(bar_mask, clip_value_min=0, clip_value_max=self.clip_votes_max)
+        mask = tf.stack([spiral_mask, bar_mask], axis=-1)
 
         if self.binary_threshold:
+            mask = binarize_mask(mask, THRESHOLD)
             mask = binarize_mask(mask, THRESHOLD)
 
         if not self.sparse:
