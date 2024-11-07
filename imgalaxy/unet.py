@@ -54,7 +54,7 @@ class GZ3DPipeline:
         size: int,
         mask_key: str = "spiral_mask",
         preprocess_input: Union[Callable, None] = None,
-        binary_threshold: bool = False,
+        binary_threshold: bool = True,
         sparse: bool = True,
         clip_votes_max: int = 6,
         batch_size: int = 32,
@@ -88,11 +88,12 @@ class GZ3DPipeline:
             spiral_mask, clip_value_min=0, clip_value_max=self.clip_votes_max
         )
         bar_mask = tf.clip_by_value(bar_mask, clip_value_min=0, clip_value_max=self.clip_votes_max)
-        mask = tf.stack([spiral_mask, bar_mask], axis=-1)
 
         if self.binary_threshold:
-            mask = binarize_mask(mask, THRESHOLD)
-            mask = binarize_mask(mask, THRESHOLD)
+            spiral_mask = binarize_mask(spiral_mask, THRESHOLD)
+            bar_mask = binarize_mask(bar_mask, THRESHOLD)
+
+        mask = tf.stack([spiral_mask, bar_mask], axis=-1)
 
         if not self.sparse:
             if self.binary_threshold:
