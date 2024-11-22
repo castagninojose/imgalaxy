@@ -3,7 +3,7 @@ from typing import Callable, Union
 
 import tensorflow as tf
 
-from imgalaxy.constants import THRESHOLD
+from imgalaxy.constants import IMAGE_SIZE, THRESHOLD
 
 
 def binarize_mask(mask, threshold: int):
@@ -51,7 +51,6 @@ class GZ3DPipeline:
 
     def __init__(
         self,
-        size: int,
         mask_key: str = "spiral_mask",
         preprocess_input: Union[Callable, None] = None,
         binary_threshold: bool = True,
@@ -62,7 +61,6 @@ class GZ3DPipeline:
         cache: bool = False,
         prefetch: bool = False,
     ) -> None:
-        self.size = size
         self.mask_key = mask_key
         self.preprocess_input = preprocess_input
         self.binary_threshold = binary_threshold
@@ -91,24 +89,27 @@ class GZ3DPipeline:
 
         if self.binary_threshold:
             spiral_mask = binarize_mask(spiral_mask, THRESHOLD)
-            bar_mask = binarize_mask(bar_mask, THRESHOLD)
+            bar_mask = binarize_mask(bar_mask, THRESHOLD + 1)
 
-        mask = tf.stack([spiral_mask, bar_mask], axis=-1)
+        print(spiral_mask.shape)
+        print(bar_mask.shape)
+        mask = tf.concat([spiral_mask, bar_mask], axis=2)
+        print(mask.shape)
 
         if not self.sparse:
             if self.binary_threshold:
-                num_classes = 2
+                num_classes = 3
             else:
                 num_classes = 7
 
             mask = tf.one_hot(tf.cast(mask, tf.int32), depth=num_classes)
-            mask = tf.squeeze(mask, axis=2)
+            # mask = tf.squeeze(mask, axis=2)
 
         return image, mask
 
     def resize(self, image, mask):
-        image = tf.image.resize(image, (self.size, self.size))
-        mask = tf.image.resize(mask, (self.size, self.size))
+        image = tf.image.resize(image, (IMAGE_SIZE, IMAGE_SIZE))
+        mask = tf.image.resize(mask, (IMAGE_SIZE, IMAGE_SIZE))
         return image, mask
 
     def __call__(self, ds):

@@ -91,13 +91,12 @@ def train(
         )
 
         pipeline = GZ3DPipeline(
-            size=IMAGE_SIZE,
             mask_key=MASK,
             preprocess_input=preprocess_input,
             binary_threshold=MIN_VOTE,
             clip_votes_max=6,
             sparse=False,
-            shuffle_buffer_size=1000,
+            shuffle_buffer_size=100,
             cache=True,
             prefetch=True,
         )
