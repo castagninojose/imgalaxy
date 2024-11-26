@@ -30,11 +30,6 @@ parameters:
       l2,
       l1_l2
     ]
-  n_filters:
-    values: [
-      64,
-      128,
-    ]
   activation:
     values: ['ReLU', 'Softmax']
   output_activation:

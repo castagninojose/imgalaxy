@@ -64,7 +64,6 @@ def train(
         project="galaxy-segmentation-project",
         name=f"attention_unet_{MASK}",
         config={
-            #'loss': loss,
             'group': f"jose_{MASK}",
         },
     ):
@@ -117,13 +116,11 @@ def train(
         ds_test = ds_test.filter(lambda x: tf.reduce_max(x[MASK]) >= MIN_VOTE)
         train_batches = pipeline(ds_train)
         val_batches = pipeline(ds_val)
-        # loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
         loss = tf.keras.losses.CategoricalFocalCrossentropy(
             alpha=[0.25, 0.75], gamma=loss_gamma, label_smoothing=loss_smoothing, from_logits=False
         )
         model.compile(
             loss=loss,
-            # optimizer=tf.keras.optimizers.SGD(learning_rate=learning_rate),
             optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
             metrics=[
                 tf.keras.metrics.IoU(
@@ -155,15 +152,15 @@ def train(
             callbacks=[
                 WandbMetricsLogger(),
                 tf.keras.callbacks.ModelCheckpoint(
-                    MODELS_DIR / f"best_att_spirals.keras",
+                    MODELS_DIR / "best_att_spirals.keras",
                     monitor='val_IoU_1',
                     save_best_only=True,
                     mode='max',
                 ),
             ],
         )
-        # check_augmented_images(ds_train)
-        # evaluate_model(ds_test, model_history, num=3)
+        check_augmented_images(ds_train)
+        evaluate_model(ds_test, model_history, num=3)
 
 
 if __name__ == '__main__':

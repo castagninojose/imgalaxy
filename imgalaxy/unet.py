@@ -58,7 +58,7 @@ class GZ3DPipeline:
         sparse: bool = True,
         clip_votes_max: int = 6,
         batch_size: int = 32,
-        shuffle_buffer_size: int = -1,
+        shuffle_buffer_size: int = 1,
         cache: bool = False,
         prefetch: bool = False,
     ) -> None:
