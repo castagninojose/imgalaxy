@@ -9,6 +9,10 @@ parameters:
   loss_gamma:
     distribution: uniform
     max: 3.0
+    min: 1.0
+  loss_alpha:
+    distribution: uniform
+    max: 0.37
     min: 0.0
   loss_smoothing:
     distribution: uniform

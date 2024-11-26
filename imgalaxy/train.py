@@ -42,6 +42,9 @@ from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline
     help="Number of convolutional layers (after concatenation) per upsampling level/block.",
 )
 @click.option(
+    "--loss-alpha", default=0.25, show_default=True, help="Focusing parameter for loss function."
+)
+@click.option(
     "--loss-gamma", default=0.2, show_default=True, help="Focusing parameter for loss function."
 )
 @click.option("--loss-smoothing", default=0.0, show_default=True, help="Label smoothing.")
@@ -56,6 +59,7 @@ def train(
     unpool,
     stack_num_down,
     stack_num_up,
+    loss_alpha,
     loss_gamma,
     loss_smoothing,
     attention,
@@ -117,7 +121,10 @@ def train(
         train_batches = pipeline(ds_train)
         val_batches = pipeline(ds_val)
         loss = tf.keras.losses.CategoricalFocalCrossentropy(
-            alpha=[0.25, 0.75], gamma=loss_gamma, label_smoothing=loss_smoothing, from_logits=False
+            alpha=[loss_alpha, 1 - loss_alpha],
+            gamma=loss_gamma,
+            label_smoothing=loss_smoothing,
+            from_logits=False,
         )
         model.compile(
             loss=loss,
