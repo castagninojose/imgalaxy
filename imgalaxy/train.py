@@ -1,7 +1,7 @@
 import click
-import wandb
 import yaml  # type: ignore
 
+import wandb
 from imgalaxy.cfg import PKG_PATH
 from imgalaxy.constants import IMAGE_SIZE, NUM_EPOCHS, THRESHOLD
 from imgalaxy.helpers import check_augmented_images, evaluate_model
@@ -190,9 +190,9 @@ def train(
             stack_num_down=stack_num_down,
             stack_num_up=stack_num_up,
         )
-        _, test_data, train_data = unet.train_pipeline()
-        check_augmented_images(train_data)
-        evaluate_model(test_data, unet.unet_model, num=7)
+        _, test_data, _ = unet.train_pipeline()
+        # check_augmented_images(train_data)
+        evaluate_model(test_data, unet.unet_model, num=23)
 
 
 if __name__ == '__main__':

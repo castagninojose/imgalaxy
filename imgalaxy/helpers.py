@@ -6,8 +6,9 @@ import keras
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-import wandb
 from sklearn.metrics import confusion_matrix, jaccard_score
+
+import wandb
 
 tf.config.run_functions_eagerly(True)
 
@@ -79,6 +80,23 @@ def check_augmented_images(dataset, num=5):
 
 
 def jaccard(y_true, y_pred):
+    """Jaccard index to compute after each epoch."""
+    tp = keras.metrics.TruePositives()
+    fp = keras.metrics.FalsePositives()
+    fn = keras.metrics.FalseNegatives()
+
+    y_hats = tf.math.argmax(y_pred, axis=-1)
+    tp.update_state(y_true, y_hats)
+    fp.update_state(y_true, y_hats)
+    fn.update_state(y_true, y_hats)
+
+    score = tp.result() / (tp.result() + fp.result() + fn.result())
+
+    return score.numpy()
+
+
+@keras.saving.register_keras_serializable()
+def _jaccard(y_true, y_pred):
     """Jaccard index to compute after each epoch."""
     tp = keras.metrics.TruePositives()
     fp = keras.metrics.FalsePositives()

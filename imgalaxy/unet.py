@@ -4,12 +4,12 @@ from typing import Union
 
 import tensorflow as tf
 import tensorflow_datasets as tfds
-import wandb
 from keras import layers
 from keras_unet_collection import models
 from tensorflow.keras import Model
 from wandb.keras import WandbMetricsLogger
 
+import wandb
 from imgalaxy.cfg import MODELS_DIR
 from imgalaxy.constants import BUFFER_SIZE, MASK, MIN_VOTE, NUM_EPOCHS, THRESHOLD
 from imgalaxy.helpers import dice, jaccard
@@ -310,7 +310,7 @@ class AttentionUNet(UNet):
     def build_unet_model(self):
         return models.att_unet_2d(
             (self.image_size, self.image_size, 3),
-            n_labels=2,
+            n_labels=1,
             filter_num=[64, 128, 256, 512, 1024],
             stack_num_down=self.stack_num_down,
             stack_num_up=self.stack_num_up,
@@ -334,7 +334,7 @@ if __name__ == '__main__':
         batch_normalization=True,
         dropout_rate=0.36969,
         learning_rate=0.009001512803560622,
-        loss='binary_focal_crossentropy',
+        loss='sparse_categorical_crossentropy',
         n_filters=64,
     )
 
