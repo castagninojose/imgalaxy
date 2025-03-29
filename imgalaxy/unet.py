@@ -52,7 +52,6 @@ class GZ3DPipeline:
     def __init__(
         self,
         size: int,
-        mask_key: str = "spiral_mask",
         preprocess_input: Union[Callable, None] = None,
         binary_threshold: bool = False,
         sparse: bool = True,
@@ -60,10 +59,9 @@ class GZ3DPipeline:
         batch_size: int = 32,
         shuffle_buffer_size: int = 1,
         cache: bool = False,
-        prefetch: bool = False,
+        prefetch: bool = True,
     ) -> None:
         self.size = size
-        self.mask_key = mask_key
         self.preprocess_input = preprocess_input
         self.binary_threshold = binary_threshold
         self.sparse = sparse
@@ -81,27 +79,32 @@ class GZ3DPipeline:
         else:
             image = tf.cast(image, tf.float32) / 255.0
 
-        mask = example[self.mask_key]
+        spiral_mask = example["spiral_mask"]
+        bar_mask = example["bar_mask"]
 
-        mask = tf.clip_by_value(mask, clip_value_min=0, clip_value_max=self.clip_votes_max)
+        spiral_mask = tf.minimum(spiral_mask, self.clip_votes_max)
+        bar_mask = tf.minimum(bar_mask, self.clip_votes_max)
 
         if self.binary_threshold:
-            mask = binarize_mask(mask, THRESHOLD)
+            spiral_mask = binarize_mask(spiral_mask, THRESHOLD)
+            bar_mask = binarize_mask(bar_mask, THRESHOLD)
+
+        # Ensure each pixel has a unique label, resolving conflicts in favor of spirals
+        combined_mask = tf.where(spiral_mask == 1, 1, tf.where(bar_mask == 1, 2, 0))
 
         if not self.sparse:
-            if self.binary_threshold:
-                num_classes = 2
-            else:
-                num_classes = 7
-
-            mask = tf.one_hot(tf.cast(mask, tf.int32), depth=num_classes)
+            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=3)
             mask = tf.squeeze(mask, axis=2)
+        else:
+            mask = tf.cast(combined_mask, tf.int32)
 
         return image, mask
 
     def resize(self, image, mask):
         image = tf.image.resize(image, (self.size, self.size))
-        mask = tf.image.resize(mask, (self.size, self.size))
+        mask = tf.image.resize(
+            mask, (self.size, self.size), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+        )
         return image, mask
 
     def __call__(self, ds):
@@ -191,10 +194,8 @@ class AugmentedSegmentationModel(tf.keras.Model):
         """
 
         super(AugmentedSegmentationModel, self).__init__()
-        self.augment_layer = AugmentLayer(
-            augmentations
-        )  # Augmentation layer for both images and masks
-        self.segmentation_model = segmentation_model  # Segmentation model
+        self.augment_layer = AugmentLayer(augmentations)  # layer for images and masks
+        self.segmentation_model = segmentation_model  # segmentation model
 
     def call(self, inputs, training=False):
         return self.segmentation_model(inputs, training=training)

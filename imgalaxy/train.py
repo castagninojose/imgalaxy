@@ -2,10 +2,14 @@
 import click
 import tensorflow as tf
 import tensorflow_datasets as tfds
-import wandb
 import yaml  # type: ignore
 from keras_unet_collection import models
+from tensorflow.keras import mixed_precision
 from tensorflow.keras.applications.vgg16 import preprocess_input
+
+import wandb
+
+mixed_precision.set_global_policy("mixed_float16")
 from wandb.keras import WandbMetricsLogger
 
 from imgalaxy.cfg import MODELS_DIR, PKG_PATH
@@ -74,7 +78,7 @@ def train(
         segmentation_model = models.att_unet_2d(
             (IMAGE_SIZE, IMAGE_SIZE, 3),
             filter_num=[64, 128, 256, 512, 1024],
-            n_labels=2,
+            n_labels=3,
             stack_num_down=stack_num_down,
             stack_num_up=stack_num_up,
             activation=activation,
@@ -101,7 +105,7 @@ def train(
 
         pipeline = GZ3DPipeline(
             size=IMAGE_SIZE,
-            mask_key=MASK,
+            # mask_key=MASK,
             preprocess_input=preprocess_input,
             binary_threshold=MIN_VOTE,
             clip_votes_max=6,
@@ -121,7 +125,7 @@ def train(
         train_batches = pipeline(ds_train)
         val_batches = pipeline(ds_val)
         loss = tf.keras.losses.CategoricalFocalCrossentropy(
-            alpha=[loss_alpha, 1 - loss_alpha],
+            alpha=[loss_alpha, 1 - loss_alpha, 1.0],
             gamma=loss_gamma,
             label_smoothing=loss_smoothing,
             from_logits=False,
@@ -131,21 +135,21 @@ def train(
             optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
             metrics=[
                 tf.keras.metrics.IoU(
-                    num_classes=2,
-                    target_class_ids=[0],
+                    num_classes=3,
+                    target_class_ids=[1],
                     sparse_y_true=False,
                     sparse_y_pred=False,
                     name="IoU_0",
                 ),
                 tf.keras.metrics.IoU(
-                    num_classes=2,
-                    target_class_ids=[1],
+                    num_classes=3,
+                    target_class_ids=[2],
                     sparse_y_true=False,
                     sparse_y_pred=False,
                     name="IoU_1",
                 ),
                 tf.keras.metrics.MeanIoU(
-                    num_classes=2, sparse_y_true=False, sparse_y_pred=False, name="MeanIoU"
+                    num_classes=3, sparse_y_true=False, sparse_y_pred=False, name="MeanIoU"
                 ),
                 tf.keras.losses.Dice(),
             ],
