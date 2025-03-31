@@ -6,8 +6,9 @@ import keras
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-import wandb
 from sklearn.metrics import confusion_matrix, jaccard_score
+
+import wandb
 
 tf.config.run_functions_eagerly(True)
 
@@ -68,14 +69,63 @@ def evaluate_model(dataset, model, num=5):
         return conf_matrix, jacc_score
 
 
+def log_predictions(ds_test, model, n: int = 3) -> None:
+    """
+    Samples up to n examples from ds_test, gets predictions from the model,
+    and logs the original images, ground truth masks, and predicted masks to wandb.
+
+    Args:
+        ds_test (tf.data.Dataset): The test dataset.
+        model (tf.keras.Model): The trained segmentation model.
+        n (int): Number of samples to log.
+    """
+
+    for batch in ds_test.take(1):
+        # Extract images and masks explicitly
+        images = batch["image"]
+        true_masks = batch["mask"]
+        break
+
+    batch_size = tf.shape(images)[0]
+    n = tf.minimum(n, batch_size).numpy()
+    indices = np.random.choice(batch_size, n, replace=False)
+    selected_images = tf.gather(images, indices)
+    selected_true_masks = tf.gather(true_masks, indices)
+
+    predictions = model.predict(selected_images)
+
+    predicted_masks = np.argmax(predictions, axis=-1)
+
+    # Convert true masks from one-hot encoding if necessary
+    if selected_true_masks.shape[-1] > 1:
+        selected_true_masks = np.argmax(selected_true_masks, axis=-1)
+
+    for i in range(n):
+        fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+
+        axes[0].imshow(selected_images[i].numpy().astype("float32"))
+        axes[0].set_title("Original Image")
+        axes[0].axis("off")
+
+        axes[1].imshow(selected_true_masks[i], cmap="viridis")
+        axes[1].set_title("Ground Truth Mask")
+        axes[1].axis("off")
+
+        axes[2].imshow(predicted_masks[i], cmap="viridis")
+        axes[2].set_title("Predicted Mask")
+        axes[2].axis("off")
+
+        wandb.log({"Prediction Sample": wandb.Image(fig)})
+
+        plt.close(fig)  # Close figure to free memory
+
+
 def check_augmented_images(dataset, num=5):
     """Log training images to check that augmentation worked correctly."""
     if dataset:
         for image, mask in dataset:
             for ind in range(num):
-                wandb.log(
-                    {"train_example": [wandb.Image(image[ind]), wandb.Image(mask[ind])]}
-                )
+                wandb.log({"train_example": [wandb.Image(image[ind]), wandb.Image(mask[ind])]})
 
 
 def jaccard(y_true, y_pred):

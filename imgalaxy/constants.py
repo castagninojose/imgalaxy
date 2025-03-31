@@ -4,7 +4,7 @@ RANDOM_SEED = 419
 
 BUFFER_SIZE = 300
 RUN_FROM = 'local'
-NUM_EPOCHS = 151
+NUM_EPOCHS = 101
 IMAGE_SIZE = 64
 MASK = 'spiral_mask'
 TRAIN_WITH = 'only'

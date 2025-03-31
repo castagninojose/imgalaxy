@@ -14,7 +14,7 @@ from wandb.keras import WandbMetricsLogger
 
 from imgalaxy.cfg import MODELS_DIR, PKG_PATH
 from imgalaxy.constants import IMAGE_SIZE, MASK, MIN_VOTE, NUM_EPOCHS
-from imgalaxy.helpers import check_augmented_images, evaluate_model
+from imgalaxy.helpers import evaluate_model, log_predictions
 from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline
 
 
@@ -68,6 +68,9 @@ def train(
     loss_smoothing,
     attention,
 ):
+    gpu = tf.config.list_physical_devices("GPU")[0]
+    tf.config.experimental.set_memory_growth(gpu, True)
+    tf.config.optimizer.set_jit(True)
     with wandb.init(
         project="galaxy-segmentation-project",
         name=f"attention_unet_{MASK}",
@@ -139,19 +142,19 @@ def train(
                     target_class_ids=[1],
                     sparse_y_true=False,
                     sparse_y_pred=False,
-                    name="IoU_0",
+                    name="IoU_1",
                 ),
                 tf.keras.metrics.IoU(
                     num_classes=3,
                     target_class_ids=[2],
                     sparse_y_true=False,
                     sparse_y_pred=False,
-                    name="IoU_1",
+                    name="IoU_2",
                 ),
                 tf.keras.metrics.MeanIoU(
                     num_classes=3, sparse_y_true=False, sparse_y_pred=False, name="MeanIoU"
                 ),
-                tf.keras.losses.Dice(),
+                # tf.keras.losses.Dice(),
             ],
         )
         model_history = model.fit(
@@ -170,8 +173,8 @@ def train(
                 ),
             ],
         )
-        check_augmented_images(ds_train)
         evaluate_model(ds_test, model_history, num=3)
+        log_predictions(ds_test, model_history, n=13)
 
 
 if __name__ == '__main__':
