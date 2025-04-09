@@ -14,7 +14,7 @@ from wandb.keras import WandbMetricsLogger
 
 from imgalaxy.cfg import MODELS_DIR, PKG_PATH
 from imgalaxy.constants import IMAGE_SIZE, MASK, MIN_VOTE, NUM_EPOCHS
-from imgalaxy.helpers import evaluate_model, log_predictions
+from imgalaxy.helpers import log_predictions
 from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline
 
 
@@ -157,7 +157,7 @@ def train(
                 # tf.keras.losses.Dice(),
             ],
         )
-        model_history = model.fit(
+        _ = model.fit(
             train_batches,
             epochs=NUM_EPOCHS,
             # steps_per_epoch=STEPS_PER_EPOCH,
@@ -173,8 +173,9 @@ def train(
                 ),
             ],
         )
-        evaluate_model(ds_test, model_history, num=3)
-        log_predictions(ds_test, model_history, n=13)
+        # evaluate_model(ds_test, model_history, num=3)
+        # check_augmented_images(ds_train, num=7)
+        log_predictions(pipeline(ds_test), model, n=13)
 
 
 if __name__ == '__main__':

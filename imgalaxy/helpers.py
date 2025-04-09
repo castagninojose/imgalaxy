@@ -82,8 +82,8 @@ def log_predictions(ds_test, model, n: int = 3) -> None:
 
     for batch in ds_test.take(1):
         # Extract images and masks explicitly
-        images = batch["image"]
-        true_masks = batch["mask"]
+        images = batch[0]
+        true_masks = batch[1]
         break
 
     batch_size = tf.shape(images)[0]
@@ -123,6 +123,7 @@ def log_predictions(ds_test, model, n: int = 3) -> None:
 def check_augmented_images(dataset, num=5):
     """Log training images to check that augmentation worked correctly."""
     if dataset:
+        print(type(dataset))
         for image, mask in dataset:
             for ind in range(num):
                 wandb.log({"train_example": [wandb.Image(image[ind]), wandb.Image(mask[ind])]})
