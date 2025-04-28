@@ -1,9 +1,9 @@
-version: '3'
 services:
 
   # ETL
   imgalaxy:
     build: .
+    shm_size: '2gb'
     image: imgalaxy:latest
     container_name: imgalaxy
     ports:

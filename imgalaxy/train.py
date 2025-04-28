@@ -5,98 +5,63 @@ import tensorflow_datasets as tfds
 import yaml  # type: ignore
 from keras_unet_collection import models
 from tensorflow.keras import mixed_precision
-from tensorflow.keras.applications.vgg16 import preprocess_input
 
 import wandb
+
+# from tensorflow.keras.applications.vgg16 import preprocess_input
+
 
 mixed_precision.set_global_policy("mixed_float16")
 from wandb.keras import WandbMetricsLogger
 
 from imgalaxy.cfg import MODELS_DIR, PKG_PATH
-from imgalaxy.constants import IMAGE_SIZE, MASK, MIN_VOTE, NUM_EPOCHS
+from imgalaxy.constants import IMAGE_SIZE, MIN_VOTE, NUM_EPOCHS
 from imgalaxy.helpers import log_predictions
 from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline
 
 
 @click.command()
-# @click.option(
-#    "--loss", default="categorical_focal_crossentropy", show_default=True, help="Loss function."
-# )
-@click.option("--learning-rate", default=1e-02, show_default=True, help="Learning rate.")
+@click.option("--learning-rate", default=1e-03, show_default=True, help="Learning rate.")
 @click.option("--activation", default="ReLU", show_default=True, help="Activation function.")
 @click.option("--batch-norm", default=False, show_default=True, help="Apply batch normalization.")
 @click.option(
-    "--atten-activation", default="ReLU", show_default=True, help="Non-linear attention activation."
-)
-@click.option(
     "--out-activation", default="Softmax", show_default=True, help="Output activation function."
 )
-@click.option("--pool", default=True, show_default=True, help="Downsample strategy.")
-@click.option("--unpool", default=True, show_default=True, help="Upsampling strategy.")
-@click.option(
-    "--stack-num-down",
-    default=2,
-    show_default=True,
-    help="Number of convolutional layers per downsampling level/block.",
-)
-@click.option(
-    "--stack-num-up",
-    default=2,
-    show_default=True,
-    help="Number of convolutional layers (after concatenation) per upsampling level/block.",
-)
-@click.option(
-    "--loss-alpha", default=0.25, show_default=True, help="Focusing parameter for loss function."
-)
-@click.option(
-    "--loss-gamma", default=0.2, show_default=True, help="Focusing parameter for loss function."
-)
-@click.option("--loss-smoothing", default=0.0, show_default=True, help="Label smoothing.")
-@click.option("--attention", default="add", show_default=True, help="Applied additive attention.")
+@click.option("--pool", default=False, show_default=True, help="Downsample strategy.")
+@click.option("--unpool", default=False, show_default=True, help="Upsampling strategy.")
 def train(
     learning_rate,
     activation,
     batch_norm,
-    atten_activation,
     out_activation,
     pool,
     unpool,
-    stack_num_down,
-    stack_num_up,
-    loss_alpha,
-    loss_gamma,
-    loss_smoothing,
-    attention,
 ):
     gpu = tf.config.list_physical_devices("GPU")[0]
     tf.config.experimental.set_memory_growth(gpu, True)
     tf.config.optimizer.set_jit(True)
     with wandb.init(
         project="galaxy-segmentation-project",
-        name=f"attention_unet_{MASK}",
+        name="att_unet_spirals_bars_int",
         config={
-            'group': f"jose_{MASK}",
+            'group': "jose_spirals_bars_int",
+            'learning_rate': learning_rate,
+            'activation': activation,
+            'batch_norm': batch_norm,
+            'out_activation': out_activation,
         },
     ):
-        segmentation_model = models.att_unet_2d(
+        segmentation_model = models.vnet_2d(
             (IMAGE_SIZE, IMAGE_SIZE, 3),
-            filter_num=[64, 128, 256, 512, 1024],
-            n_labels=3,
-            stack_num_down=stack_num_down,
-            stack_num_up=stack_num_up,
+            n_labels=4,
+            filter_num=[64, 128, 256, 512],
             activation=activation,
-            atten_activation=atten_activation,
-            attention=attention,
             output_activation=out_activation,
-            batch_norm=batch_norm,
             pool=pool,
             unpool=unpool,
-            backbone='VGG16',
-            weights="imagenet",
-            freeze_backbone=True,
-            freeze_batch_norm=True,
-            name='attunet',
+            name='vnet',
         )
+
         model = AugmentedSegmentationModel(
             augmentations=[
                 tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
@@ -105,14 +70,12 @@ def train(
             ],
             segmentation_model=segmentation_model,
         )
-
         pipeline = GZ3DPipeline(
             size=IMAGE_SIZE,
-            # mask_key=MASK,
-            preprocess_input=preprocess_input,
-            binary_threshold=MIN_VOTE,
+            preprocess_input=None,
+            binary_threshold=True,
             clip_votes_max=6,
-            sparse=False,
+            sparse=True,
             shuffle_buffer_size=1000,
             cache=True,
             prefetch=True,
@@ -122,65 +85,69 @@ def train(
             'galaxy_zoo3d', split=['train[:75%]', 'train[75%:90%]', 'train[90%:]']
         )
 
-        ds_train = ds_train.filter(lambda x: tf.reduce_max(x[MASK]) >= MIN_VOTE)
-        ds_val = ds_val.filter(lambda x: tf.reduce_max(x[MASK]) >= MIN_VOTE)
-        ds_test = ds_test.filter(lambda x: tf.reduce_max(x[MASK]) >= MIN_VOTE)
+        ds_train = ds_train.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
+        ds_train = ds_train.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
+        ds_val = ds_val.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
+        ds_val = ds_val.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
+        ds_test = ds_test.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
+        ds_test = ds_test.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
         train_batches = pipeline(ds_train)
         val_batches = pipeline(ds_val)
-        loss = tf.keras.losses.CategoricalFocalCrossentropy(
-            alpha=[loss_alpha, 1 - loss_alpha, 1.0],
-            gamma=loss_gamma,
-            label_smoothing=loss_smoothing,
-            from_logits=False,
-        )
         model.compile(
-            loss=loss,
+            loss=tf.keras.losses.SparseCategoricalCrossentropy(),
             optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
             metrics=[
                 tf.keras.metrics.IoU(
-                    num_classes=3,
+                    num_classes=4,
                     target_class_ids=[1],
+                    ignore_class=0,
                     sparse_y_true=False,
                     sparse_y_pred=False,
                     name="IoU_1",
                 ),
                 tf.keras.metrics.IoU(
-                    num_classes=3,
+                    num_classes=4,
                     target_class_ids=[2],
+                    ignore_class=0,
                     sparse_y_true=False,
                     sparse_y_pred=False,
                     name="IoU_2",
                 ),
-                tf.keras.metrics.MeanIoU(
-                    num_classes=3, sparse_y_true=False, sparse_y_pred=False, name="MeanIoU"
+                tf.keras.metrics.IoU(
+                    num_classes=4,
+                    target_class_ids=[3],
+                    ignore_class=0,
+                    sparse_y_true=False,
+                    sparse_y_pred=False,
+                    name="IoU_3",
                 ),
-                # tf.keras.losses.Dice(),
+                tf.keras.metrics.MeanIoU(
+                    num_classes=4, sparse_y_true=False, sparse_y_pred=False, name="MeanIoU"
+                ),
             ],
         )
         _ = model.fit(
             train_batches,
             epochs=NUM_EPOCHS,
-            # steps_per_epoch=STEPS_PER_EPOCH,
-            # validation_steps=VALIDATION_STEPS,
+            steps_per_epoch=(5000 // pipeline.batch_size),
+            validation_steps=(5000 // pipeline.batch_size),
             validation_data=val_batches,
             callbacks=[
                 WandbMetricsLogger(),
                 tf.keras.callbacks.ModelCheckpoint(
-                    MODELS_DIR / "best_att_spirals.keras",
+                    MODELS_DIR / "best_att_comp.keras",
                     monitor='val_IoU_1',
                     save_best_only=True,
                     mode='max',
                 ),
             ],
         )
-        # evaluate_model(ds_test, model_history, num=3)
-        # check_augmented_images(ds_train, num=7)
-        log_predictions(pipeline(ds_test), model, n=13)
+        log_predictions(pipeline(ds_test), model, n=23)
 
 
 if __name__ == '__main__':
-    sweep_configs = yaml.safe_load((PKG_PATH / 'sweep.yaml').read_text())
+    sweep_configs = yaml.safe_load((PKG_PATH / 'sweep_vnet.yaml').read_text())
     sweep_id = wandb.sweep(sweep=sweep_configs, project="galaxy-segmentation-project")
     wandb.agent(sweep_id, function=train)
-    wandb.agent(f"ganegroup/galaxy-segmentation-project/{sweep_id}", function=train, count=47)
-    train()  # pylint: disable=no-value-for-parameter
+    wandb.agent(f"ganegroup/galaxy-segmentation-project/{sweep_id}", function=train, count=29)
+    # train()  # pylint: disable=no-value-for-parameter

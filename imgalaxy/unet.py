@@ -58,7 +58,7 @@ class GZ3DPipeline:
         clip_votes_max: int = 6,
         batch_size: int = 32,
         shuffle_buffer_size: int = 1,
-        cache: bool = False,
+        cache: bool = True,
         prefetch: bool = True,
     ) -> None:
         self.size = size
@@ -77,7 +77,7 @@ class GZ3DPipeline:
         if self.preprocess_input:
             image = self.preprocess_input(image)
         else:
-            image = tf.cast(image, tf.float32) / 255.0
+            image = tf.cast(image, tf.float16) / 255.0
 
         spiral_mask = example["spiral_mask"]
         bar_mask = example["bar_mask"]
@@ -89,11 +89,16 @@ class GZ3DPipeline:
             spiral_mask = binarize_mask(spiral_mask, THRESHOLD)
             bar_mask = binarize_mask(bar_mask, THRESHOLD)
 
-        # Ensure each pixel has a unique label, resolving conflicts in favor of spirals
-        combined_mask = tf.where(spiral_mask == 1, 1, tf.where(bar_mask == 1, 2, 0))
+        spiral_mask = tf.cast(spiral_mask, tf.int32)
+        bar_mask = tf.cast(bar_mask, tf.int32)
+
+        combined_mask = tf.zeros_like(bar_mask)  # empty array with bar_mask shape
+        combined_mask += tf.where(spiral_mask == 1, 1, 0)  # label spirals as 1
+        combined_mask += tf.where(bar_mask == 1, 2, 0)  # label bars as 2
+        # since these are added, pixels in both bars and spirals are labeled as 1 + 2 = 3.
 
         if not self.sparse:
-            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=3)
+            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=4)
             mask = tf.squeeze(mask, axis=2)
         else:
             mask = tf.cast(combined_mask, tf.int32)
@@ -144,7 +149,7 @@ class AugmentLayer(tf.keras.layers.Layer):
         if training:
             img_channels = tf.shape(images)[-1]
             mask_channels = tf.shape(masks)[-1]
-            images_masks = tf.concat([images, masks], axis=-1)
+            images_masks = tf.concat([images, tf.cast(masks, tf.float32)], axis=-1)
 
             for augmentation in self.augmentations:
                 images_masks = augmentation(images_masks)

@@ -26,24 +26,6 @@ def evaluate_model(dataset, model, num=5):
         for image, mask in dataset:
             pred_mask = create_mask(model.predict(image))
             for ind in range(num):
-                # wandb.log(
-                #    {
-                #        ind: wandb.Image(
-                #            image[ind],
-                #            masks={
-                #                "predictions": {
-                #                    "mask_data": pred_mask[ind],
-                #                    "class_labels": {0: "sky", 1: "spiral arm"},
-                #                },
-                #                "ground_truth": {
-                #                    "mask_data": mask[ind],
-                #                    "class_labels": {0: "sky", 1: "spiral arm"},
-                #                },
-                #            },
-                #        )
-                #    }
-                # )
-
                 wandb.log(
                     {
                         "example": [
@@ -88,7 +70,8 @@ def log_predictions(ds_test, model, n: int = 3) -> None:
 
     batch_size = tf.shape(images)[0]
     n = tf.minimum(n, batch_size).numpy()
-    indices = np.random.choice(batch_size, n, replace=False)
+    # indices = np.random.choice(batch_size, n, replace=False)
+    indices = range(batch_size)
     selected_images = tf.gather(images, indices)
     selected_true_masks = tf.gather(true_masks, indices)
 
@@ -102,17 +85,17 @@ def log_predictions(ds_test, model, n: int = 3) -> None:
 
     for i in range(n):
         fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-
-        axes[0].imshow(selected_images[i].numpy().astype("float32"))
+        galaxy = selected_images[i]  # convert back to RGB
+        axes[0].imshow(galaxy)
         axes[0].set_title("Original Image")
         axes[0].axis("off")
 
-        axes[1].imshow(selected_true_masks[i], cmap="viridis")
-        axes[1].set_title("Ground Truth Mask")
+        axes[1].imshow(predicted_masks[i], cmap="viridis")
+        axes[1].set_title("Predicted Mask")
         axes[1].axis("off")
 
-        axes[2].imshow(predicted_masks[i], cmap="viridis")
-        axes[2].set_title("Predicted Mask")
+        axes[2].imshow(selected_true_masks[i], cmap="viridis")
+        axes[2].set_title("Ground Truth Mask")
         axes[2].axis("off")
 
         wandb.log({"Prediction Sample": wandb.Image(fig)})
@@ -120,13 +103,37 @@ def log_predictions(ds_test, model, n: int = 3) -> None:
         plt.close(fig)  # Close figure to free memory
 
 
-def check_augmented_images(dataset, num=5):
-    """Log training images to check that augmentation worked correctly."""
-    if dataset:
-        print(type(dataset))
-        for image, mask in dataset:
-            for ind in range(num):
-                wandb.log({"train_example": [wandb.Image(image[ind]), wandb.Image(mask[ind])]})
+def log_training_examples(dataset, n: int = 5):
+    """Log training examples to check if the masks were correctly generated."""
+    for batch in dataset.take(1):
+        # Extract images and masks explicitly
+        images = batch[0]
+        masks = batch[1]
+        break
+
+    batch_size = tf.shape(images)[0]
+    n = tf.minimum(n, batch_size).numpy()
+    indices = np.random.choice(batch_size, n, replace=False)
+    selected_images = tf.gather(images, indices)
+    selected_masks = tf.gather(masks, indices)
+
+    # Convert true masks from one-hot encoding if necessary
+    if selected_masks.shape[-1] > 1:
+        selected_masks = np.argmax(selected_masks, axis=-1)
+
+    for i in range(n):
+        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+        axes[0].imshow(selected_images[i])
+        axes[0].set_title("Original Image")
+        axes[0].axis("off")
+
+        axes[1].imshow(selected_masks[i], cmap="viridis")
+        axes[1].set_title("Ground Truth Mask")
+        axes[1].axis("off")
+
+        wandb.log({"Training Sample": wandb.Image(fig)})
+
+        plt.close(fig)  # Close figure to free memory
 
 
 def jaccard(y_true, y_pred):

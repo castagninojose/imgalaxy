@@ -7,7 +7,6 @@ RUN_FROM = 'local'
 NUM_EPOCHS = 101
 IMAGE_SIZE = 128
 MASK = 'spiral_mask'
-TRAIN_WITH = 'only'
 MIN_VOTE = (
     3  # min votes that the most voted pixel of a mask must have to be a spiral arm (barred) galaxy
 )
