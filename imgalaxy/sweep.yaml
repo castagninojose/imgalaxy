@@ -3,31 +3,21 @@ description: spiral arms
 program: train.py
 method: bayes
 metric:
-  name: epoch/val_jaccard
+  name: epoch/IoU_1
   goal: maximize
 parameters:
-  loss:
-    values: [
-      sparse_categorical_crossentropy,
-      dice, 
-      binary_focal_crossentropy
-    ]
-  loss_alpha:
-    distribution: uniform
-    max: 1.0
-    min: 0.0
   loss_gamma:
     distribution: uniform
-    max: 1.0
+    max: 3.0
+    min: 1.0
+  loss_alpha:
+    distribution: uniform
+    max: 0.37
     min: 0.0
   loss_smoothing:
     distribution: uniform
     max: 1.0
     min: 0.0
-  dropout:
-    distribution: uniform
-    max: 0.4
-    min: 0.15
   learning_rate: 
     distribution: uniform
     max: 0.01
@@ -44,13 +34,6 @@ parameters:
       l2,
       l1_l2
     ]
-  n_filters:
-    values: [
-      64,
-      128,
-    ]
-  min_vote:
-    values: [3, 4]
   activation:
     values: ['ReLU', 'Softmax']
   output_activation:

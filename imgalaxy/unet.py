@@ -1,346 +1,228 @@
 # pylint: disable=no-member
-from datetime import datetime
-from typing import Union
+from typing import Callable, Union
 
 import tensorflow as tf
-import tensorflow_datasets as tfds
-import wandb
-from keras import layers
-from keras_unet_collection import models
-from tensorflow.keras import Model
-from wandb.keras import WandbMetricsLogger
 
-from imgalaxy.cfg import MODELS_DIR
-from imgalaxy.constants import BUFFER_SIZE, MASK, MIN_VOTE, NUM_EPOCHS, THRESHOLD
-from imgalaxy.helpers import dice, jaccard
+from imgalaxy.constants import THRESHOLD
 
 
-class UNet:
-    """Class to train a segmentation model using tensorflow.keras backend.
+def binarize_mask(mask, threshold: int):
+    return tf.where(mask < threshold, tf.zeros_like(mask), tf.ones_like(mask))
+
+
+class GZ3DPipeline:
+    """
+    A data pipeline class for preprocessing GZ3D datasets for machine learning models.
 
     Attributes
     ----------
-    loss : str, default="sparse_categorical_crossentropy".
-        Name of the loss function to use. See tf.keras.losses.
-    dropout_rate : str, default=0.3.
-        Drop-out regularization rate.
-    num_epochs : int, default=150.
-        Total number of training epochs.
-    batch_size : int, default=32.
-        Batch size used for training.
-    batch_normalization : bool, default=False.
-        Boolean flag to toggle batch normalization.
-    kernel_regularization : str, default=None.
-        Type of kernel regularization (L1, L2 or L1-L2). None (default) means no kernel
-        regularization.
-    image_size : int, default=128.
-        Size of the input image.
-    n_filters : int, default=128.
-        Number of filters to use in the double convolution block.
-    mask : str, default="spiral_mask".
-        Mask to use for training. Either "spiral_mask" or "bar_masks".
-    min_vote : int, default=3.
-        Votes above which a pixel is positively labeled (part of a mask).
+    size : int
+        The target size for resizing images and masks.
+    mask_key : str
+        The key to access the mask in the dataset examples.
+    preprocess_input : callable, optional
+        A function to preprocess the input images (intended to be use with preprocess_input functions
+        from keras.applications).
+    binary_threshold : int
+        Votes threshold used to binarize the mask.
+    sparse : bool
+        Whether to output a sparse or a one-hot encoded mask.
+    clip_votes_max : int
+        The maximum value to clip the mask votes.
+    batch_size : int
+        The batch size for the dataset.
+    shuffle_buffer_size : int
+        The buffer size for shuffling the dataset.
+    cache : bool
+        Whether to cache the dataset.
+    prefetch : bool, default=False.
+        Whether to prefetch the dataset.
+
+    Methods
+    -------
+    load_data(example):
+        Loads and preprocesses the image and mask from a dataset example.
+    resize(image, mask):
+        Resizes the image and mask to the target size.
+    __call__(ds):
+        Applies the data pipeline to the given dataset.
 
     """
 
     def __init__(
         self,
-        loss: str = "sparse_categorical_crossentropy",
-        dropout_rate: float = 0.3,
-        num_epochs: int = NUM_EPOCHS,
-        learning_rate: float = 0.0011,
+        size: int,
+        preprocess_input: Union[Callable, None] = None,
+        binary_threshold: bool = False,
+        sparse: bool = True,
+        clip_votes_max: int = 6,
         batch_size: int = 32,
-        batch_normalization: bool = True,
-        kernel_regularization: Union[str, None] = None,
-        image_size: int = 128,
-        n_filters: int = 128,
-        mask: str = MASK,
-        min_vote: int = MIN_VOTE,
-    ):
-        self.loss = loss
-        self.dropout_rate = dropout_rate
-        self.num_epochs = num_epochs
-        self.learning_rate = learning_rate
+        shuffle_buffer_size: int = 1,
+        cache: bool = True,
+        prefetch: bool = True,
+    ) -> None:
+        self.size = size
+        self.preprocess_input = preprocess_input
+        self.binary_threshold = binary_threshold
+        self.sparse = sparse
+        self.clip_votes_max = clip_votes_max
         self.batch_size = batch_size
-        self.batch_normalization = batch_normalization
-        self.image_size = image_size
-        self.min_vote = min_vote
-        self.n_filters = n_filters
-        self.mask = mask
-        self.kernel_regularization = kernel_regularization
-        self.unet_model = self.build_unet_model()
-        self.augmentation = tf.keras.Sequential(
-            [
-                tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
-                tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
-                tf.keras.layers.RandomCrop(420, 420, seed=101),
-            ]
-        )
-        self.resize = tf.keras.Sequential(
-            [
-                layers.Resizing(self.image_size, self.image_size),
-            ]
-        )
+        self.shuffle_buffer_size = shuffle_buffer_size
+        self.cache = cache
+        self.prefetch = prefetch
 
-        if self.mask == 'spiral_mask':
-            self.TRAIN_LENGTH, self.VAL_SIZE, self.TEST_SIZE = 4883, 1088, 551
-        elif self.mask == 'bar_mask':
-            self.TRAIN_LENGTH, self.VAL_SIZE, self.TEST_SIZE = 3783, 832, 421
+    def load_data(self, example):
+        image = example["image"]
 
-    def augment(self, image, mask):
-        images_mask = tf.keras.layers.Concatenate(axis=2)([image, mask])
-        images_mask = self.augmentation(images_mask)
+        if self.preprocess_input:
+            image = self.preprocess_input(image)
+        else:
+            image = tf.cast(image, tf.float16) / 255.0
 
-        image = images_mask[:, :, 0:3]
-        mask = images_mask[:, :, 3:]
+        spiral_mask = example["spiral_mask"]
+        bar_mask = example["bar_mask"]
 
-        mask = tf.cast(mask, 'uint8')
+        spiral_mask = tf.minimum(spiral_mask, self.clip_votes_max)
+        bar_mask = tf.minimum(bar_mask, self.clip_votes_max)
 
-        return image, mask
+        if self.binary_threshold:
+            spiral_mask = binarize_mask(spiral_mask, THRESHOLD)
+            bar_mask = binarize_mask(bar_mask, THRESHOLD)
 
-    def binary_mask(self, mask, threshold: int = THRESHOLD):
-        return tf.where(mask < threshold, tf.zeros_like(mask), tf.ones_like(mask))
+        spiral_mask = tf.cast(spiral_mask, tf.int32)
+        bar_mask = tf.cast(bar_mask, tf.int32)
 
-    def load_image(self, datapoint, training=False):
-        image = datapoint['image']
-        mask = datapoint[self.mask]
-        if training:
-            image, mask = self.augment(image, mask)
+        combined_mask = tf.zeros_like(bar_mask)
+        combined_mask += tf.where(spiral_mask == 1, 1, 0)  # label spirals as 1
+        combined_mask += tf.where(bar_mask == 1, 2, 0)  # label bars as 2
+        # since these are added, pixels in both bars and spirals are labeled as 1 + 2 = 3.
 
-        image = self.resize(image)
-        mask = self.resize(mask)
-
-        image = tf.cast(image, tf.float32) / 255.0
-        mask = self.binary_mask(mask, THRESHOLD)
+        if not self.sparse:
+            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=4)
+            mask = tf.squeeze(mask, axis=2)
+        else:
+            mask = tf.cast(combined_mask, tf.int32)
 
         return image, mask
 
-    def double_conv_block(self, x, n_filters):
-        x = layers.Conv2D(
-            n_filters,
-            3,
-            padding="same",
-            activation="relu",
-            kernel_initializer="he_normal",
-            kernel_regularizer=self.kernel_regularization,
-        )(x)
-        if self.batch_normalization:
-            x = layers.BatchNormalization()(x)
-
-        x = layers.Conv2D(
-            n_filters,
-            3,
-            padding="same",
-            activation="relu",
-            kernel_initializer="he_normal",
-            kernel_regularizer=self.kernel_regularization,
-        )(x)
-        if self.batch_normalization:
-            x = layers.BatchNormalization()(x)
-        return x
-
-    def downsample_block(self, x, n_filters):
-        f = self.double_conv_block(x, n_filters)
-        p = layers.MaxPool2D(2)(f)
-        p = layers.Dropout(self.dropout_rate)(p)
-
-        return f, p
-
-    def upsample_block(self, x, conv_features, n_filters):
-        x = layers.Conv2DTranspose(
-            n_filters,
-            3,
-            2,
-            padding="same",
-            kernel_regularizer=self.kernel_regularization,
-        )(x)
-        x = layers.concatenate([x, conv_features])
-        x = layers.Dropout(self.dropout_rate)(x)
-        x = self.double_conv_block(x, n_filters)
-
-        return x
-
-    def build_unet_model(self):
-        inputs = layers.Input(shape=(self.image_size, self.image_size, 3))
-
-        f1, p1 = self.downsample_block(inputs, self.n_filters // 2)
-        f2, p2 = self.downsample_block(p1, self.n_filters)
-        f3, p3 = self.downsample_block(p2, self.n_filters * 2)
-        f4, p4 = self.downsample_block(p3, self.n_filters * 4)
-
-        bottleneck = self.double_conv_block(p4, self.n_filters * 8)
-
-        u6 = self.upsample_block(bottleneck, f4, self.n_filters * 4)
-        u7 = self.upsample_block(u6, f3, self.n_filters * 2)
-        u8 = self.upsample_block(u7, f2, self.n_filters)
-        u9 = self.upsample_block(u8, f1, self.n_filters // 2)
-
-        outputs = layers.Conv2D(2, 1, padding="same", activation="softmax")(u9)
-
-        model = Model(inputs, outputs, name="U-Net")
-
-        return model
-
-    def train_pipeline(self):
-        ds_train, ds_val, ds_test = tfds.load(
-            'galaxy_zoo3d', split=['train[:75%]', 'train[75%:90%]', 'train[90%:]']
+    def resize(self, image, mask):
+        image = tf.image.resize(image, (self.size, self.size))
+        mask = tf.image.resize(
+            mask, (self.size, self.size), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
         )
-        ds_train = ds_train.filter(
-            lambda x: tf.reduce_max(x[self.mask]) >= self.min_vote
-        )
-        ds_val = ds_val.filter(lambda x: tf.reduce_max(x[self.mask]) >= self.min_vote)
-        ds_test = ds_test.filter(lambda x: tf.reduce_max(x[self.mask]) >= self.min_vote)
+        return image, mask
 
-        train_dataset = ds_train.map(
-            lambda x: self.load_image(x, training=True),
-            num_parallel_calls=tf.data.AUTOTUNE,
-        )
-        test_dataset = ds_test.map(self.load_image, num_parallel_calls=tf.data.AUTOTUNE)
-        val_dataset = ds_val.map(self.load_image, num_parallel_calls=tf.data.AUTOTUNE)
+    def __call__(self, ds):
+        ds = ds.map(self.load_data, num_parallel_calls=tf.data.AUTOTUNE)
+        ds = ds.map(self.resize, num_parallel_calls=tf.data.AUTOTUNE)
+        if self.cache:
+            ds = ds.cache()
+        if self.shuffle_buffer_size > 0:
+            ds = ds.shuffle(buffer_size=self.shuffle_buffer_size)
+        ds = ds.batch(self.batch_size)
+        if self.prefetch:
+            ds = ds.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
-        train_batches = (
-            train_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat()
-        )
-        train_batches = train_batches.prefetch(
-            buffer_size=tf.data.experimental.AUTOTUNE
-        )
-        test_batches = test_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat()
-        val_batches = val_dataset.shuffle(BUFFER_SIZE).batch(self.batch_size).repeat()
-
-        self.unet_model.compile(
-            optimizer=tf.keras.optimizers.Adam(learning_rate=self.learning_rate),
-            loss=self.loss,
-            metrics=["accuracy", jaccard, dice],
-            jit_compile=True,
-        )
-
-        STEPS_PER_EPOCH = self.TRAIN_LENGTH // self.batch_size
-        VAL_SUBSPLITS = 5
-        TEST_LENGTH = self.VAL_SIZE + self.TEST_SIZE
-        VALIDATION_STEPS = TEST_LENGTH // self.batch_size // VAL_SUBSPLITS
-
-        model_history = self.unet_model.fit(
-            train_batches,
-            epochs=self.num_epochs,
-            steps_per_epoch=STEPS_PER_EPOCH,
-            validation_steps=VALIDATION_STEPS,
-            validation_data=val_batches,
-            callbacks=[
-                WandbMetricsLogger(),
-                tf.keras.callbacks.ModelCheckpoint(
-                    MODELS_DIR / f"best_{self.mask}.keras",
-                    monitor='val_jaccard',
-                    save_best_only=True,
-                    mode='max',
-                ),
-                tf.keras.callbacks.ModelCheckpoint(
-                    MODELS_DIR / f"last_{self.mask}.keras",
-                    monitor='val_jaccard',
-                    save_best_only=False,
-                    mode='max',
-                ),
-            ],
-        )
-        now = datetime.now().strftime("%Y%m%d_%H:%M")
-        self.unet_model.save(MODELS_DIR / f"{self.mask}_{now}.keras")
-
-        return model_history, test_batches, train_batches
+        return ds
 
 
-class TransUNet(UNet):
-    def __init__(self, backbone: str = 'VGG16', **kwargs) -> None:
-        super().__init__(**kwargs)
-        self.backbone = backbone
-
-    def build_unet_model(self):
-        return models.transunet_2d(
-            (self.image_size, self.image_size, 3),
-            n_labels=2,
-            backbone=self.backbone,
-            weights='imagenet',
-            freeze_backbone=True,
-            freeze_batch_norm=True,
-            filter_num=[64, 128, 256, 512],
-            activation='ReLU',
-            output_activation='Sigmoid',
-            batch_norm=self.batch_normalization,
-            pool=False,
-            unpool=False,
-            name='transunet',
-        )
-
-
-class AttentionUNet(UNet):
+class AugmentLayer(tf.keras.layers.Layer):
     """
-    Variation designed to test different backbones with an Attention UNet
-    (Oktay et al. 2018) as a base model.
+    A custom Keras layer for applying augmentations to both images and masks. This layer ensures
+    that the same augmentations are applied to both images and masks during training. The
+    augmentations are specified as a list of functions
 
     Attributes
     ----------
-    backbone : str, default="VGG16".
-        Model to use as backbone for the UNet.
+    augmentations : list
+        A list of augmentation functions or keras image augmentation layers to be applied to the
+        images and masks.
 
     """
 
-    def __init__(
-        self,
-        backbone: str = 'VGG16',
-        attention: str = 'add',
-        activation: str = 'ReLU',
-        atten_activation: str = 'ReLU',
-        output_activation: str = 'Softmax',
-        pool: bool = False,
-        unpool: bool = False,
-        stack_num_down: int = 2,
-        stack_num_up: int = 2,
-        **kwargs,
-    ) -> None:
-        self.attention = attention
-        self.activation = activation
-        self.atten_activation = atten_activation
-        self.output_activation = output_activation
-        self.pool = pool
-        self.unpool = unpool
-        self.stack_num_down = stack_num_down
-        self.stack_num_up = stack_num_up
-        self.backbone = backbone
-        super().__init__(**kwargs)
+    def __init__(self, augmentations):
+        super(AugmentLayer, self).__init__()
+        self.augmentations = augmentations
 
-    def build_unet_model(self):
-        return models.att_unet_2d(
-            (self.image_size, self.image_size, 3),
-            n_labels=2,
-            filter_num=[64, 128, 256, 512, 1024],
-            stack_num_down=self.stack_num_down,
-            stack_num_up=self.stack_num_up,
-            activation=self.activation,
-            atten_activation=self.atten_activation,
-            attention=self.attention,
-            output_activation=self.output_activation,
-            batch_norm=self.batch_normalization,
-            backbone=self.backbone,
-            pool=self.pool,
-            unpool=self.unpool,
-            weights='imagenet',
-            freeze_backbone=True,
-            freeze_batch_norm=True,
-            name='attention_unet',
-        )
+    def call(self, images, masks, training=False):
+        # Apply the same augmentations to both images and masks during training
+        if training:
+            img_channels = tf.shape(images)[-1]
+            mask_channels = tf.shape(masks)[-1]
+            float_masks = tf.cast(masks, tf.float16)
+            images_masks = tf.concat([images, float_masks], axis=-1)
+
+            for augmentation in self.augmentations:
+                images_masks = augmentation(images_masks)
+
+            images, masks = tf.split(images_masks, [img_channels, mask_channels], axis=-1)
+
+        return images, masks
 
 
-if __name__ == '__main__':
-    spirals_unet = UNet(
-        batch_normalization=True,
-        dropout_rate=0.36969,
-        learning_rate=0.009001512803560622,
-        loss='binary_focal_crossentropy',
-        n_filters=64,
-    )
+class AugmentedSegmentationModel(tf.keras.Model):
+    """
+    A custom Keras model that integrates data augmentation with a segmentation model. This model
+    applies specified augmentations to both images and masks before passing them to the segmentation
+    model during training.
 
-    with wandb.init(
-        project="galaxy-segmentation-project",
-        name="spiral_mask",
-        config={"model": "attention unet", "backbone": "resnet101v2"},
-    ):
-        _, _, _ = spirals_unet.train_pipeline()
+    Attributes
+    ----------
+        augment_layer : AugmentLayer
+            Layer that applies augmentations to images and masks.
+        segmentation_model : tf.keras.Model
+            The underlying segmentation model.
+
+    Methods
+    -------
+        call(inputs, training=False):
+            Forward pass of the model. Applies the segmentation model to the inputs.
+        train_step(data):
+            Custom training step that includes data augmentation and loss computation.
+
+            Args
+            ----
+                data : tuple
+                    A tuple containing images and masks.
+            Returns
+            -------
+                dict
+                    A dictionary containing the loss and other metrics.
+
+    """
+
+    def __init__(self, augmentations, segmentation_model):
+        """
+        Initializes the AugmentedSegmentationModel with the given augmentations and segmentation model.
+        Args:
+            augmentations (list): A list of augmentation functions or keras image augmentation layers to be applied to the images and masks.
+            segmentation_model: The segmentation model to be used for image segmentation.
+        """
+
+        super(AugmentedSegmentationModel, self).__init__()
+        self.augment_layer = AugmentLayer(augmentations)  # layer for images and masks
+        self.segmentation_model = segmentation_model  # segmentation model
+
+    def call(self, inputs, training=False):
+        return self.segmentation_model(inputs, training=training)
+
+    def train_step(self, data):
+        images, masks = data
+        with tf.GradientTape() as tape:
+            images, masks = self.augment_layer(images, masks, training=True)
+            predictions = self(images, training=True)
+            loss = self.compute_loss(y=masks, y_pred=predictions)
+
+        # Compute gradients
+        gradients = tape.gradient(loss, self.trainable_variables)
+        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+
+        # Update metrics (includes the metric that tracks the loss)
+        for metric in self.metrics:
+            if metric.name == "loss":
+                metric.update_state(loss)
+            else:
+                metric.update_state(masks, predictions)
+
+        # Return a dictionary with loss and all metrics
+        return {m.name: m.result() for m in self.metrics}
