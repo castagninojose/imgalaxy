@@ -17,7 +17,7 @@ class LensingDataset(tfds.core.GeneratorBasedBuilder):
 
     References
     ----------
-    [^1]: https://www.tensorflow.org/datasets/api_docs/python/tfds/core/GeneratorBasedBuilder
+    [^1]: [TF docs](https://www.tensorflow.org/datasets/api_docs/python/tfds/core/GeneratorBasedBuilder)
     """
 
     VERSION = tfds.core.Version('1.0.0')
