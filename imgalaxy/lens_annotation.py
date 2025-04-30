@@ -8,11 +8,7 @@ import streamlit as st
 from astropy import convolution
 from numpy.typing import NDArray
 from photutils.background import Background2D, MedianBackground
-from photutils.segmentation import (
-    SegmentationImage,
-    SourceFinder,
-    make_2dgaussian_kernel,
-)
+from photutils.segmentation import SegmentationImage, SourceFinder, make_2dgaussian_kernel
 
 from imgalaxy.cfg import DES_DATA, DES_NO_SOURCE_DATA, LENSING_MASKS_DIR
 
@@ -48,9 +44,7 @@ def keep_only_center(segmentation_map: SegmentationImage) -> NDArray:
     return mask
 
 
-def segment_background(
-    data: NDArray, thresh: float = 1.5, npixels: int = 1, exclude_pct=12.5
-):
+def segment_background(data: NDArray, thresh: float = 1.5, npixels: int = 1, exclude_pct=12.5):
     """Build segmentation map using photutils's Background2D and SourceFinder."""
     bkg = Background2D(
         data,
@@ -245,7 +239,6 @@ def sources_masks():
     background_and_source = DES_DATA[ix].transpose(1, 2, 0)
     source_image = background_and_source - background_image
     _source_img = source_image.copy()
-    # _source_img[source_image < 19] = 0
 
     source_mask_fp: Path = LENSING_MASKS_DIR / f"{ix}_source_mask.npy"
 
@@ -273,7 +266,6 @@ def sources_masks():
                 threshold2,
                 exclude_pct=39.0,
             )
-            # mask = segmentation_map._data
             st.plotly_chart(
                 px.imshow(segmentation_map, height=737, width=737),
                 theme=None,
@@ -296,14 +288,9 @@ def sources_masks():
                 else:
                     st.write("")
                     st.write("")
-            # fig, ax = plt.subplots()
-            # ax.imshow(ski.color.label2rgb(segmentation_map._data, _source_img[:, :, 1:4].sum(axis=2)))
-            # st.pyplot(fig)
 
             st.plotly_chart(
-                px.imshow(
-                    source_image.sum(axis=2), height=737, width=737, binary_string=True
-                ),
+                px.imshow(source_image.sum(axis=2), height=737, width=737, binary_string=True),
                 use_container_width=True,
                 theme=None,
             )
