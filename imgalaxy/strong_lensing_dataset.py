@@ -8,12 +8,24 @@ from imgalaxy.cfg import DES_DATA, LENSING_MASKS_DIR
 
 
 class LensingDataset(tfds.core.GeneratorBasedBuilder):
+    """Strong gravitational lensing dataset.
+
+    It can generate a tensorflow dataset vía `download_and_prepare()` method [^1].
+    Needs images and masks saved as .npy in `DES_DATA@constants.py` and
+    `LENSING_DATA_DIR@constants.py`, respectively.
+
+
+    References
+    ----------
+    [^1]: https://www.tensorflow.org/datasets/api_docs/python/tfds/core/GeneratorBasedBuilder
+    """
+
     VERSION = tfds.core.Version('1.0.0')
 
     def _info(self):
         return tfds.core.DatasetInfo(
             builder=self,
-            description="Lensing dataset with one image and background, lens and source masks.",
+            description="Strong lensing dataset with three masks: background, lens and source.",
             features=tfds.features.FeaturesDict(
                 {
                     'galaxy_id': tfds.features.Text(),
