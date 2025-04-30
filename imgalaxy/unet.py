@@ -92,7 +92,7 @@ class GZ3DPipeline:
         spiral_mask = tf.cast(spiral_mask, tf.int32)
         bar_mask = tf.cast(bar_mask, tf.int32)
 
-        combined_mask = tf.zeros_like(bar_mask)  # empty array with bar_mask shape
+        combined_mask = tf.zeros_like(bar_mask)
         combined_mask += tf.where(spiral_mask == 1, 1, 0)  # label spirals as 1
         combined_mask += tf.where(bar_mask == 1, 2, 0)  # label bars as 2
         # since these are added, pixels in both bars and spirals are labeled as 1 + 2 = 3.
@@ -149,7 +149,8 @@ class AugmentLayer(tf.keras.layers.Layer):
         if training:
             img_channels = tf.shape(images)[-1]
             mask_channels = tf.shape(masks)[-1]
-            images_masks = tf.concat([images, tf.cast(masks, tf.float32)], axis=-1)
+            float_masks = tf.cast(masks, tf.float16)
+            images_masks = tf.concat([images, float_masks], axis=-1)
 
             for augmentation in self.augmentations:
                 images_masks = augmentation(images_masks)

@@ -1,27 +1,23 @@
-# pylint: disable=no-member
+# pylint: disable=no-member  # pylint keeps insisting that there's no tf.keras 🤷
 import click
 import tensorflow as tf
 import tensorflow_datasets as tfds
 import yaml  # type: ignore
 from keras_unet_collection import models
 from tensorflow.keras import mixed_precision
-
-import wandb
-
-# from tensorflow.keras.applications.vgg16 import preprocess_input
-
-
-mixed_precision.set_global_policy("mixed_float16")
 from wandb.keras import WandbMetricsLogger
 
+import wandb
 from imgalaxy.cfg import MODELS_DIR, PKG_PATH
 from imgalaxy.constants import IMAGE_SIZE, MIN_VOTE, NUM_EPOCHS
 from imgalaxy.helpers import log_predictions
 from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline
 
+mixed_precision.set_global_policy("mixed_float16")
+
 
 @click.command()
-@click.option("--learning-rate", default=1e-03, show_default=True, help="Learning rate.")
+@click.option("--learning-rate", default=0.07, show_default=True, help="Learning rate.")
 @click.option("--activation", default="ReLU", show_default=True, help="Activation function.")
 @click.option("--batch-norm", default=False, show_default=True, help="Apply batch normalization.")
 @click.option(
@@ -77,7 +73,7 @@ def train(
             clip_votes_max=6,
             sparse=True,
             shuffle_buffer_size=1000,
-            cache=True,
+            cache=False,
             prefetch=True,
         )
 
@@ -101,7 +97,7 @@ def train(
                     num_classes=4,
                     target_class_ids=[1],
                     ignore_class=0,
-                    sparse_y_true=False,
+                    sparse_y_true=True,
                     sparse_y_pred=False,
                     name="IoU_1",
                 ),
@@ -109,7 +105,7 @@ def train(
                     num_classes=4,
                     target_class_ids=[2],
                     ignore_class=0,
-                    sparse_y_true=False,
+                    sparse_y_true=True,
                     sparse_y_pred=False,
                     name="IoU_2",
                 ),
@@ -117,7 +113,7 @@ def train(
                     num_classes=4,
                     target_class_ids=[3],
                     ignore_class=0,
-                    sparse_y_true=False,
+                    sparse_y_true=True,
                     sparse_y_pred=False,
                     name="IoU_3",
                 ),
