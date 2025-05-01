@@ -85,7 +85,7 @@ def log_predictions(ds_test, model, n: int = 3) -> None:
 
     for i in range(n):
         fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-        galaxy = selected_images[i]  # convert back to RGB
+        galaxy = selected_images[i].numpy().mean(axis=-1)
         axes[0].imshow(galaxy)
         axes[0].set_title("Original Image")
         axes[0].axis("off")

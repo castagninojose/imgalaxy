@@ -226,3 +226,32 @@ class AugmentedSegmentationModel(tf.keras.Model):
 
         # Return a dictionary with loss and all metrics
         return {m.name: m.result() for m in self.metrics}
+
+
+class LensingPipeline(GZ3DPipeline):
+    def load_data(self, example):
+        image = example["image"]
+
+        if self.preprocess_input:
+            image = self.preprocess_input(image)
+        else:
+            image = tf.cast(image, tf.float16) / 255.0
+
+        source_mask = example["source"]
+        lens_mask = example["lens"]
+
+        source_mask = tf.cast(source_mask, tf.int32)
+        lens_mask = tf.cast(lens_mask, tf.int32)
+
+        combined_mask = tf.zeros_like(lens_mask)
+        combined_mask += tf.where(source_mask == 1, 1, 0)  # label source as 1
+        combined_mask += tf.where(lens_mask == 1, 2, 0)  # label lens as 2
+        # since these are added, pixels in both bars and spirals are labeled as 1 + 2 = 3.
+
+        if not self.sparse:
+            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=4)
+            mask = tf.squeeze(mask, axis=2)
+        else:
+            mask = tf.cast(combined_mask, tf.int32)
+
+        return image, mask

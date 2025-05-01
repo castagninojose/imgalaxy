@@ -16,6 +16,7 @@ services:
     # command: 'poetry run wandb sweep --resume ganegroup/galaxy-segmentation-project/5ozjufhs'
     volumes:
       - ${GALAXY_ZOO_DIR}:/root/tensorflow_datasets/galaxy_zoo3d
+      - ${STRONG_LENSING_DIR}:/root/tensorflow_datasets/lensing
       # - /home/tinto/git-repos/imgalaxy/imgalaxy/resources/models:/imgalaxy/imgalaxy/resources/models
       - type: bind
         source: ./imgalaxy
