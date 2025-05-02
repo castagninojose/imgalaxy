@@ -12,14 +12,12 @@ def binarize_mask(mask, threshold: int):
 
 class BaseSegmentationPipeline:
     """
-    A data pipeline class for preprocessing datasets for semantic segmentation models.
+    A data preprocessing pipeline class for semantic segmentation models.
 
     Attributes
     ----------
     size : int
         The target size for resizing images and masks.
-    mask_key : str
-        The key to access the mask in the dataset examples.
     preprocess_input : callable, optional
         A function to preprocess the input images (intended to be use with preprocess_input functions
         from keras.applications).
@@ -57,7 +55,7 @@ class BaseSegmentationPipeline:
         sparse: bool = True,
         clip_votes_max: int = 6,
         batch_size: int = 32,
-        shuffle_buffer_size: int = 1000,
+        shuffle_buffer_size: int = 500,
         cache: bool = True,
         prefetch: bool = True,
     ) -> None:
@@ -207,35 +205,39 @@ class AugmentedSegmentationModel(tf.keras.Model):
 
     Attributes
     ----------
-        augment_layer : AugmentLayer
-            Layer that applies augmentations to images and masks.
-        segmentation_model : tf.keras.Model
-            The underlying segmentation model.
+    augment_layer : AugmentLayer
+        Layer that applies augmentations to images and masks.
+    segmentation_model : tf.keras.Model
+        The underlying segmentation model. May also be one of `keras_unet_collection`.
 
     Methods
     -------
-        call(inputs, training=False):
-            Forward pass of the model. Applies the segmentation model to the inputs.
-        train_step(data):
-            Custom training step that includes data augmentation and loss computation.
+    call(inputs, training=False):
+        Forward pass of the model. Applies the segmentation model to the inputs.
+    train_step(data):
+        Custom training step that includes data augmentation and loss computation.
 
-            Args
-            ----
-                data : tuple
-                    A tuple containing images and masks.
-            Returns
-            -------
-                dict
-                    A dictionary containing the loss and other metrics.
+        Args
+        ----
+            data : tuple
+                A tuple containing images and masks.
+        Returns
+        -------
+            dict
+                A dictionary containing the loss and other metrics.
 
     """
 
     def __init__(self, augmentations, segmentation_model):
         """
         Initializes the AugmentedSegmentationModel with the given augmentations and segmentation model.
-        Args:
-            augmentations (list): A list of augmentation functions or keras image augmentation layers to be applied to the images and masks.
-            segmentation_model: The segmentation model to be used for image segmentation.
+
+        Parameters
+        ----------
+        augmentations : list
+            Augmentation functions or keras image augmentation layers to be applied to the images and masks.
+        segmentation_model: tf.keras.Model
+            The model to be used for image segmentation. May also be one of `keras_unet_collection`.
         """
 
         super(AugmentedSegmentationModel, self).__init__()

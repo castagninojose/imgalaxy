@@ -129,7 +129,7 @@ def train(learning_rate, activation, batch_norm, out_activation, pool, unpool, t
                     name="IoU_3",
                 ),
                 tf.keras.metrics.MeanIoU(
-                    num_classes=4, sparse_y_true=False, sparse_y_pred=False, name="MeanIoU"
+                    num_classes=4, sparse_y_true=True, sparse_y_pred=False, name="MeanIoU"
                 ),
             ],
         )
