@@ -66,7 +66,7 @@ def train(learning_rate, activation, batch_norm, out_activation, pool, unpool, t
             pipeline = GZ3DPipeline(size=IMAGE_SIZE, binary_threshold=True, clip_votes_max=6)
 
         segmentation_model = models.vnet_2d(
-            (IMAGE_SIZE, IMAGE_SIZE, channels),
+            (pipeline.size, pipeline.size, channels),
             n_labels=4,
             filter_num=[64, 128, 256, 512],
             activation=activation,
@@ -150,116 +150,6 @@ def train(learning_rate, activation, batch_norm, out_activation, pool, unpool, t
             ],
         )
         log_predictions(pipeline(ds_test), model, task, n=23)
-
-
-def train_lensing(
-    learning_rate,
-    activation,
-    batch_norm,
-    out_activation,
-    pool,
-    unpool,
-):
-    gpu = tf.config.list_physical_devices("GPU")[0]
-    tf.config.experimental.set_memory_growth(gpu, True)
-    tf.config.optimizer.set_jit(True)
-    with wandb.init(
-        project="imgalaxy",
-        name="vnet_lens_and_source",
-        config={
-            'group': "jose_lensing",
-            'learning_rate': learning_rate,
-            'activation': activation,
-            'batch_norm': batch_norm,
-            'out_activation': out_activation,
-        },
-    ):
-        segmentation_model = models.vnet_2d(
-            (IMAGE_SIZE, IMAGE_SIZE, 5),
-            n_labels=4,
-            filter_num=[64, 128, 256, 512],
-            activation=activation,
-            output_activation=out_activation,
-            pool=pool,
-            unpool=unpool,
-            name='vnet',
-        )
-
-        model = AugmentedSegmentationModel(
-            augmentations=[
-                tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
-                tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
-                tf.keras.layers.RandomZoom(height_factor=(-0.2, +0.2)),
-            ],
-            segmentation_model=segmentation_model,
-        )
-        pipeline = LensingPipeline(
-            size=IMAGE_SIZE,
-            preprocess_input=None,
-            binary_threshold=True,
-            clip_votes_max=6,
-            sparse=True,
-            shuffle_buffer_size=1000,
-            cache=True,
-            prefetch=True,
-        )
-
-        ds_train, ds_val, ds_test = tfds.load(
-            'lensing', split=['train[:75%]', 'train[75%:90%]', 'train[90%:]']
-        )
-
-        train_batches = pipeline(ds_train)
-        val_batches = pipeline(ds_val)
-        model.compile(
-            loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-            metrics=[
-                tf.keras.metrics.IoU(
-                    num_classes=4,
-                    target_class_ids=[1],
-                    ignore_class=0,
-                    sparse_y_true=True,
-                    sparse_y_pred=False,
-                    name="IoU_1",
-                ),
-                tf.keras.metrics.IoU(
-                    num_classes=4,
-                    target_class_ids=[2],
-                    ignore_class=0,
-                    sparse_y_true=True,
-                    sparse_y_pred=False,
-                    name="IoU_2",
-                ),
-                tf.keras.metrics.IoU(
-                    num_classes=4,
-                    target_class_ids=[3],
-                    ignore_class=0,
-                    sparse_y_true=True,
-                    sparse_y_pred=False,
-                    name="IoU_3",
-                ),
-                tf.keras.metrics.MeanIoU(
-                    num_classes=4, sparse_y_true=False, sparse_y_pred=False, name="MeanIoU"
-                ),
-            ],
-        )
-        _ = model.fit(
-            train_batches,
-            epochs=NUM_EPOCHS,
-            steps_per_epoch=(9999 // pipeline.batch_size),
-            validation_steps=(9999 // pipeline.batch_size),
-            validation_data=val_batches,
-            callbacks=[
-                WandbMetricsLogger(),
-                tf.keras.callbacks.ModelCheckpoint(
-                    MODELS_DIR / "best_vnet_lensing.keras",
-                    monitor='val_IoU_1',
-                    save_best_only=True,
-                    mode='max',
-                ),
-            ],
-        )
-        log_predictions(pipeline(ds_test), model, n=23)
 
 
 if __name__ == '__main__':
