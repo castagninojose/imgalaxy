@@ -8,7 +8,7 @@ from tensorflow.keras import mixed_precision
 from wandb.keras import WandbMetricsLogger
 
 import wandb
-from imgalaxy.cfg import MODELS_DIR, PKG_PATH  # pylint: disable=unused-import  # noqa: F401
+from imgalaxy.cfg import MODELS_DIR
 from imgalaxy.constants import IMAGE_SIZE, MIN_VOTE, NUM_EPOCHS
 from imgalaxy.helpers import log_predictions
 from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline, LensingPipeline
@@ -35,34 +35,38 @@ mixed_precision.set_global_policy("mixed_float16")
 @click.option("--unpool", default=False, show_default=False, help="Upsampling strategy.")
 @click.option(
     "--task",
-    default='lensing',
+    default='galaxy_zoo3d',
     show_default=True,
     help="Segmentation task. Either 'lensing' or  'galaxy_zoo3d'.",
 )
-def train(
-    learning_rate,
-    activation,
-    batch_norm,
-    out_activation,
-    pool,
-    unpool,
-):
+def train(learning_rate, activation, batch_norm, out_activation, pool, unpool, task):
+    if task not in ['lensing', 'galaxy_zoo3d']:
+        raise ValueError(f"Task must be one of 'lensing' or 'galaxy_zoo3d'. Instead got: {task}.")
+
     gpu = tf.config.list_physical_devices("GPU")[0]
     tf.config.experimental.set_memory_growth(gpu, True)
     tf.config.optimizer.set_jit(True)
     with wandb.init(
-        project="galaxy-segmentation-project",
-        name="att_unet_spirals_bars_int",
+        project="imgalaxy",  # f"{task}-segmentation-project" could be used
+        name=f"unet_{task}",
         config={
-            'group': "jose_spirals_bars_int",
+            'group': f"jose_{task}",
             'learning_rate': learning_rate,
             'activation': activation,
             'batch_norm': batch_norm,
             'out_activation': out_activation,
         },
     ):
+        channels = 3
+        if task == 'lensing':
+            channels: int = 5  # lensing images have 5 channels
+            pipeline = LensingPipeline(size=64)  # TODO May 2025: avoid using magic number
+
+        else:
+            pipeline = GZ3DPipeline(size=IMAGE_SIZE, binary_threshold=True, clip_votes_max=6)
+
         segmentation_model = models.vnet_2d(
-            (IMAGE_SIZE, IMAGE_SIZE, 3),
+            (IMAGE_SIZE, IMAGE_SIZE, channels),
             n_labels=4,
             filter_num=[64, 128, 256, 512],
             activation=activation,
@@ -80,27 +84,20 @@ def train(
             ],
             segmentation_model=segmentation_model,
         )
-        pipeline = GZ3DPipeline(
-            size=IMAGE_SIZE,
-            preprocess_input=None,
-            binary_threshold=True,
-            clip_votes_max=6,
-            sparse=True,
-            shuffle_buffer_size=1000,
-            cache=False,
-            prefetch=True,
-        )
 
         ds_train, ds_val, ds_test = tfds.load(
-            'galaxy_zoo3d', split=['train[:75%]', 'train[75%:90%]', 'train[90%:]']
+            task, split=['train[:75%]', 'train[75%:90%]', 'train[90%:]']
         )
 
-        ds_train = ds_train.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
-        ds_train = ds_train.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
-        ds_val = ds_val.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
-        ds_val = ds_val.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
-        ds_test = ds_test.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
-        ds_test = ds_test.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
+        if task == 'galaxy_zoo3d':
+            # Make sure the selected galaxies have positives bar and spiral masks
+            ds_train = ds_train.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
+            ds_train = ds_train.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
+            ds_val = ds_val.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
+            ds_val = ds_val.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
+            ds_test = ds_test.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
+            ds_test = ds_test.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
+
         train_batches = pipeline(ds_train)
         val_batches = pipeline(ds_val)
         model.compile(
@@ -139,20 +136,20 @@ def train(
         _ = model.fit(
             train_batches,
             epochs=NUM_EPOCHS,
-            steps_per_epoch=(5000 // pipeline.batch_size),
+            steps_per_epoch=(5000 // pipeline.batch_size),  # TODO May 2025: avoid magic number
             validation_steps=(5000 // pipeline.batch_size),
             validation_data=val_batches,
             callbacks=[
                 WandbMetricsLogger(),
                 tf.keras.callbacks.ModelCheckpoint(
-                    MODELS_DIR / "best_att_comp.keras",
+                    MODELS_DIR / f"best_{task}.keras",
                     monitor='val_IoU_1',
                     save_best_only=True,
                     mode='max',
                 ),
             ],
         )
-        log_predictions(pipeline(ds_test), model, n=23)
+        log_predictions(pipeline(ds_test), model, task, n=23)
 
 
 def train_lensing(

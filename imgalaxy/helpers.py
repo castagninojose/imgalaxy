@@ -51,7 +51,7 @@ def evaluate_model(dataset, model, num=5):
         return conf_matrix, jacc_score
 
 
-def log_predictions(ds_test, model, n: int = 3) -> None:
+def log_predictions(ds_test, model, task: str = "galaxy_zoo3d", n: int = 3) -> None:
     """
     Samples up to n examples from ds_test, gets predictions from the model,
     and logs the original images, ground truth masks, and predicted masks to wandb.
@@ -70,7 +70,7 @@ def log_predictions(ds_test, model, n: int = 3) -> None:
 
     batch_size = tf.shape(images)[0]
     n = tf.minimum(n, batch_size).numpy()
-    # indices = np.random.choice(batch_size, n, replace=False)
+    # indices = np.random.choice(batch_size, n, replace=False)  # use to subset samples from batch
     indices = range(batch_size)
     selected_images = tf.gather(images, indices)
     selected_true_masks = tf.gather(true_masks, indices)
@@ -85,7 +85,9 @@ def log_predictions(ds_test, model, n: int = 3) -> None:
 
     for i in range(n):
         fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-        galaxy = selected_images[i].numpy().mean(axis=-1)
+        galaxy = selected_images[i].numpy()
+        if task == 'lensing':
+            galaxy = galaxy.mean(axis=-1)  # lensing images have 5 channels, need averaging to plot.
         axes[0].imshow(galaxy)
         axes[0].set_title("Original Image")
         axes[0].axis("off")
