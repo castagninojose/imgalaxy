@@ -10,9 +10,9 @@ def binarize_mask(mask, threshold: int):
     return tf.where(mask < threshold, tf.zeros_like(mask), tf.ones_like(mask))
 
 
-class GZ3DPipeline:
+class BaseSegmentationPipeline:
     """
-    A data pipeline class for preprocessing GZ3D datasets for machine learning models.
+    A data pipeline class for preprocessing datasets for semantic segmentation models.
 
     Attributes
     ----------
@@ -71,6 +71,33 @@ class GZ3DPipeline:
         self.cache = cache
         self.prefetch = prefetch
 
+    def resize(self, image, mask):
+        image = tf.image.resize(image, (self.size, self.size))
+        mask = tf.image.resize(
+            mask, (self.size, self.size), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+        )
+        return image, mask
+
+    def __call__(self, ds):
+        ds = ds.map(self.load_data, num_parallel_calls=tf.data.AUTOTUNE)
+        ds = ds.map(self.resize, num_parallel_calls=tf.data.AUTOTUNE)
+        if self.cache:
+            ds = ds.cache()
+        if self.shuffle_buffer_size > 0:
+            ds = ds.shuffle(buffer_size=self.shuffle_buffer_size)
+        ds = ds.batch(self.batch_size)
+        if self.prefetch:
+            ds = ds.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+
+        return ds
+
+
+class GZ3DPipeline(BaseSegmentationPipeline):
+    """
+    Pipeline for training with Galaxy Zoo 3D dataset. Inherits from `BaseSegmentationPipeline`
+    TODO May 2025: Add docstring
+    """
+
     def load_data(self, example):
         image = example["image"]
 
@@ -105,25 +132,37 @@ class GZ3DPipeline:
 
         return image, mask
 
-    def resize(self, image, mask):
-        image = tf.image.resize(image, (self.size, self.size))
-        mask = tf.image.resize(
-            mask, (self.size, self.size), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
-        )
+
+class LensingPipeline(BaseSegmentationPipeline):
+    """Pipeline for strong gravitational lensing model. Inherits from `BaseSegmentationPipeline`"""
+
+    def load_data(self, example):
+        image = example["image"]
+
+        if self.preprocess_input:
+            image = self.preprocess_input(image)
+        else:
+            image = tf.cast(image, tf.float16) / 255.0
+
+        source_mask = example["source"]
+        lens_mask = example["lens"]
+        background_mask = example["background"]
+
+        source_mask = tf.cast(source_mask, tf.int32)
+        lens_mask = tf.cast(lens_mask, tf.int32)
+        background_mask = tf.cast(background_mask, tf.int32)
+
+        combined_mask = tf.where(source_mask == 1, 1, 0)  # label source as 1
+        combined_mask = tf.where(lens_mask == 1, 2, combined_mask)  # label lens as 2
+        combined_mask = tf.where(background_mask == 1, 3, combined_mask)  # label background as 3
+
+        if not self.sparse:
+            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=4)
+            mask = tf.squeeze(mask, axis=2)
+        else:
+            mask = tf.cast(combined_mask, tf.int32)
+
         return image, mask
-
-    def __call__(self, ds):
-        ds = ds.map(self.load_data, num_parallel_calls=tf.data.AUTOTUNE)
-        ds = ds.map(self.resize, num_parallel_calls=tf.data.AUTOTUNE)
-        if self.cache:
-            ds = ds.cache()
-        if self.shuffle_buffer_size > 0:
-            ds = ds.shuffle(buffer_size=self.shuffle_buffer_size)
-        ds = ds.batch(self.batch_size)
-        if self.prefetch:
-            ds = ds.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-
-        return ds
 
 
 class AugmentLayer(tf.keras.layers.Layer):
@@ -226,32 +265,3 @@ class AugmentedSegmentationModel(tf.keras.Model):
 
         # Return a dictionary with loss and all metrics
         return {m.name: m.result() for m in self.metrics}
-
-
-class LensingPipeline(GZ3DPipeline):
-    def load_data(self, example):
-        image = example["image"]
-
-        if self.preprocess_input:
-            image = self.preprocess_input(image)
-        else:
-            image = tf.cast(image, tf.float16) / 255.0
-
-        source_mask = example["source"]
-        lens_mask = example["lens"]
-
-        source_mask = tf.cast(source_mask, tf.int32)
-        lens_mask = tf.cast(lens_mask, tf.int32)
-
-        combined_mask = tf.zeros_like(lens_mask)
-        combined_mask += tf.where(source_mask == 1, 1, 0)  # label source as 1
-        combined_mask += tf.where(lens_mask == 1, 2, 0)  # label lens as 2
-        # since these are added, pixels in both bars and spirals are labeled as 1 + 2 = 3.
-
-        if not self.sparse:
-            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=4)
-            mask = tf.squeeze(mask, axis=2)
-        else:
-            mask = tf.cast(combined_mask, tf.int32)
-
-        return image, mask

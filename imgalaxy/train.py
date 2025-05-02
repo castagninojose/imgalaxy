@@ -2,13 +2,13 @@
 import click
 import tensorflow as tf
 import tensorflow_datasets as tfds
-import yaml  # type: ignore
+import yaml  # type: ignore  # pylint: disable=unused-import  # noqa: F401
 from keras_unet_collection import models
 from tensorflow.keras import mixed_precision
 from wandb.keras import WandbMetricsLogger
 
 import wandb
-from imgalaxy.cfg import MODELS_DIR, PKG_PATH  # noqa
+from imgalaxy.cfg import MODELS_DIR, PKG_PATH  # pylint: disable=unused-import  # noqa: F401
 from imgalaxy.constants import IMAGE_SIZE, MIN_VOTE, NUM_EPOCHS
 from imgalaxy.helpers import log_predictions
 from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline, LensingPipeline
@@ -16,6 +16,29 @@ from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline, LensingPipel
 mixed_precision.set_global_policy("mixed_float16")
 
 
+@click.command()
+@click.option("--learning-rate", default=1e-02, show_default=True, help="Learning rate.")
+@click.option(
+    "--activation",
+    default="ReLU",
+    show_default=True,
+    help="Activation function. One of `keras_unet_collection.activations`.",
+)
+@click.option("--batch-norm", default=False, show_default=True, help="Apply batch normalization.")
+@click.option(
+    "--out-activation",
+    default="Softmax",
+    show_default=True,
+    help="Output activation function. One of `keras_unet_collection.activations`.",
+)
+@click.option("--pool", default=False, show_default=False, help="Downsample strategy.")
+@click.option("--unpool", default=False, show_default=False, help="Upsampling strategy.")
+@click.option(
+    "--task",
+    default='lensing',
+    show_default=True,
+    help="Segmentation task. Either 'lensing' or  'galaxy_zoo3d'.",
+)
 def train(
     learning_rate,
     activation,
@@ -132,15 +155,6 @@ def train(
         log_predictions(pipeline(ds_test), model, n=23)
 
 
-@click.command()
-@click.option("--learning-rate", default=1e-02, show_default=True, help="Learning rate.")
-@click.option("--activation", default="ReLU", show_default=True, help="Activation function.")
-@click.option("--batch-norm", default=False, show_default=True, help="Apply batch normalization.")
-@click.option(
-    "--out-activation", default="Softmax", show_default=True, help="Output activation function."
-)
-@click.option("--pool", default=False, show_default=True, help="Downsample strategy.")
-@click.option("--unpool", default=False, show_default=True, help="Upsampling strategy.")
 def train_lensing(
     learning_rate,
     activation,
@@ -189,7 +203,7 @@ def train_lensing(
             clip_votes_max=6,
             sparse=True,
             shuffle_buffer_size=1000,
-            cache=False,
+            cache=True,
             prefetch=True,
         )
 
@@ -252,8 +266,8 @@ def train_lensing(
 
 
 if __name__ == '__main__':
-    sweep_configs = yaml.safe_load((PKG_PATH / 'sweep_vnet.yaml').read_text())
-    sweep_id = wandb.sweep(sweep=sweep_configs, project="galaxy-segmentation-project")
-    wandb.agent(sweep_id, function=train)
-    wandb.agent(f"ganegroup/galaxy-segmentation-project/{sweep_id}", function=train, count=29)
-    # train_lensing()  # pylint: disable=no-value-for-parameter
+    # sweep_configs = yaml.safe_load((PKG_PATH / 'sweep_vnet.yaml').read_text())
+    # sweep_id = wandb.sweep(sweep=sweep_configs, project="galaxy-segmentation-project")
+    # wandb.agent(sweep_id, function=train)
+    # wandb.agent(f"ganegroup/galaxy-segmentation-project/{sweep_id}", function=train, count=29)
+    train()  # pylint: disable=no-value-for-parameter
