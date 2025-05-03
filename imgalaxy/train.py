@@ -32,8 +32,8 @@ mixed_precision.set_global_policy("mixed_float16")
 )
 @click.option("--pool", default=False, show_default=False, help="Downsample strategy.")
 @click.option("--unpool", default=False, show_default=False, help="Upsampling strategy.")
-# @click.option("--loss-alpha", default=0.25, show_default=True, help="Weight balancing factor.")
-# @click.option("--loss-gamma", default=2.0, show_default=True, help="Focus parameter.")
+@click.option("--loss-alpha", default=0.25, show_default=True, help="Weight balancing factor.")
+@click.option("--loss-gamma", default=2.0, show_default=True, help="Focus parameter.")
 @click.option("--label-smoothing", default=0.0, show_default=True, help="Label smoothing factor.")
 @click.option(
     "--task",
@@ -57,8 +57,8 @@ def train(
     unpool,
     sparse,
     task,
-    # loss_alpha,
-    # loss_gamma,
+    loss_alpha,
+    loss_gamma,
     label_smoothing,
 ):
     if task not in ['lensing', 'galaxy_zoo3d']:
@@ -142,10 +142,10 @@ def train(
         if sparse:
             loss = tf.keras.losses.SparseCategoricalCrossentropy(ignore_class=0)
         else:
-            # loss = tf.keras.losses.CategoricalFocalCrossentropy(
-            #     alpha=loss_alpha, gamma=loss_gamma, label_smoothing=label_smoothing
-            # )
-            loss = tf.keras.losses.CategoricalCrossentropy(label_smoothing=label_smoothing)
+            loss = tf.keras.losses.CategoricalFocalCrossentropy(
+                alpha=loss_alpha, gamma=loss_gamma, label_smoothing=label_smoothing
+            )
+            # loss = tf.keras.losses.CategoricalCrossentropy(label_smoothing=label_smoothing)
         model.compile(
             loss=loss,
             optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
