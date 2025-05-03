@@ -1,4 +1,4 @@
-# pylint: disable=no-member
+# pylint: disable=no-member  # pylint keeps insisting that there's no tf.keras 🤷
 from typing import Callable, Union
 
 import tensorflow as tf
@@ -10,16 +10,14 @@ def binarize_mask(mask, threshold: int):
     return tf.where(mask < threshold, tf.zeros_like(mask), tf.ones_like(mask))
 
 
-class GZ3DPipeline:
+class BaseSegmentationPipeline:
     """
-    A data pipeline class for preprocessing GZ3D datasets for machine learning models.
+    A data preprocessing pipeline class for semantic segmentation models.
 
     Attributes
     ----------
     size : int
         The target size for resizing images and masks.
-    mask_key : str
-        The key to access the mask in the dataset examples.
     preprocess_input : callable, optional
         A function to preprocess the input images (intended to be use with preprocess_input functions
         from keras.applications).
@@ -57,7 +55,7 @@ class GZ3DPipeline:
         sparse: bool = True,
         clip_votes_max: int = 6,
         batch_size: int = 32,
-        shuffle_buffer_size: int = 1,
+        shuffle_buffer_size: int = 500,
         cache: bool = True,
         prefetch: bool = True,
     ) -> None:
@@ -70,6 +68,36 @@ class GZ3DPipeline:
         self.shuffle_buffer_size = shuffle_buffer_size
         self.cache = cache
         self.prefetch = prefetch
+
+    def resize(self, image, mask):
+        image = tf.image.resize(image, (self.size, self.size))
+        mask = tf.image.resize(
+            mask, (self.size, self.size), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
+        )
+        return image, mask
+
+    def load_data(self, example):
+        raise NotImplementedError("Not implemented. Use either lensing or gz3d pipelines instead.")
+
+    def __call__(self, ds):
+        ds = ds.map(self.load_data, num_parallel_calls=tf.data.AUTOTUNE)
+        ds = ds.map(self.resize, num_parallel_calls=tf.data.AUTOTUNE)
+        if self.cache:
+            ds = ds.cache()
+        if self.shuffle_buffer_size > 0:
+            ds = ds.shuffle(buffer_size=self.shuffle_buffer_size)
+        ds = ds.batch(self.batch_size)
+        if self.prefetch:
+            ds = ds.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+
+        return ds
+
+
+class GZ3DPipeline(BaseSegmentationPipeline):
+    """
+    Pipeline for training with Galaxy Zoo 3D dataset. Inherits from `BaseSegmentationPipeline`
+    TODO May 2025: Add docstring
+    """
 
     def load_data(self, example):
         image = example["image"]
@@ -105,25 +133,37 @@ class GZ3DPipeline:
 
         return image, mask
 
-    def resize(self, image, mask):
-        image = tf.image.resize(image, (self.size, self.size))
-        mask = tf.image.resize(
-            mask, (self.size, self.size), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
-        )
+
+class LensingPipeline(BaseSegmentationPipeline):
+    """Pipeline for strong gravitational lensing model. Inherits from `BaseSegmentationPipeline`"""
+
+    def load_data(self, example):
+        image = example["image"]
+
+        if self.preprocess_input:
+            image = self.preprocess_input(image)
+        else:
+            image = tf.cast(image, tf.float16) / 255.0
+
+        source_mask = example["source"]
+        lens_mask = example["lens"]
+        background_mask = example["background"]
+
+        source_mask = tf.cast(source_mask, tf.int32)
+        lens_mask = tf.cast(lens_mask, tf.int32)
+        background_mask = tf.cast(background_mask, tf.int32)
+
+        combined_mask = tf.where(source_mask == 1, 1, 0)  # label source as 1
+        combined_mask = tf.where(lens_mask == 1, 2, combined_mask)  # label lens as 2
+        combined_mask = tf.where(background_mask == 1, 3, combined_mask)  # label background as 3
+
+        if not self.sparse:
+            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=4)
+            mask = tf.squeeze(mask, axis=2)
+        else:
+            mask = tf.cast(combined_mask, tf.int32)
+
         return image, mask
-
-    def __call__(self, ds):
-        ds = ds.map(self.load_data, num_parallel_calls=tf.data.AUTOTUNE)
-        ds = ds.map(self.resize, num_parallel_calls=tf.data.AUTOTUNE)
-        if self.cache:
-            ds = ds.cache()
-        if self.shuffle_buffer_size > 0:
-            ds = ds.shuffle(buffer_size=self.shuffle_buffer_size)
-        ds = ds.batch(self.batch_size)
-        if self.prefetch:
-            ds = ds.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-
-        return ds
 
 
 class AugmentLayer(tf.keras.layers.Layer):
@@ -168,35 +208,39 @@ class AugmentedSegmentationModel(tf.keras.Model):
 
     Attributes
     ----------
-        augment_layer : AugmentLayer
-            Layer that applies augmentations to images and masks.
-        segmentation_model : tf.keras.Model
-            The underlying segmentation model.
+    augment_layer : AugmentLayer
+        Layer that applies augmentations to images and masks.
+    segmentation_model : tf.keras.Model
+        The underlying segmentation model. May also be one of `keras_unet_collection`.
 
     Methods
     -------
-        call(inputs, training=False):
-            Forward pass of the model. Applies the segmentation model to the inputs.
-        train_step(data):
-            Custom training step that includes data augmentation and loss computation.
+    call(inputs, training=False):
+        Forward pass of the model. Applies the segmentation model to the inputs.
+    train_step(data):
+        Custom training step that includes data augmentation and loss computation.
 
-            Args
-            ----
-                data : tuple
-                    A tuple containing images and masks.
-            Returns
-            -------
-                dict
-                    A dictionary containing the loss and other metrics.
+        Args
+        ----
+            data : tuple
+                A tuple containing images and masks.
+        Returns
+        -------
+            dict
+                A dictionary containing the loss and other metrics.
 
     """
 
     def __init__(self, augmentations, segmentation_model):
         """
         Initializes the AugmentedSegmentationModel with the given augmentations and segmentation model.
-        Args:
-            augmentations (list): A list of augmentation functions or keras image augmentation layers to be applied to the images and masks.
-            segmentation_model: The segmentation model to be used for image segmentation.
+
+        Parameters
+        ----------
+        augmentations : list
+            Augmentation functions or keras image augmentation layers to be applied to the images and masks.
+        segmentation_model: tf.keras.Model
+            The model to be used for image segmentation. May also be one of `keras_unet_collection`.
         """
 
         super(AugmentedSegmentationModel, self).__init__()
