@@ -1,54 +1,18 @@
 """Helper methods"""
-
+# pylint: disable=no-member  # pylint keeps insisting that there's no tf.keras 🤷
+from copy import deepcopy
 from datetime import datetime
+from typing import Any, Dict
 
-import keras
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from sklearn.metrics import confusion_matrix, jaccard_score
+from matplotlib import colors
+from numpy.typing import NDArray
 
 import wandb
 
 tf.config.run_functions_eagerly(True)
-
-
-def create_mask(pred_mask):
-    pred_mask = tf.argmax(pred_mask, axis=-1)
-    pred_mask = pred_mask[..., tf.newaxis]
-    return pred_mask
-
-
-def evaluate_model(dataset, model, num=5):
-    """Evaluate model after a run is completed."""
-    # TODO: try tf.keras.Model.evaluate()
-    if dataset:
-        for image, mask in dataset:
-            pred_mask = create_mask(model.predict(image))
-            for ind in range(num):
-                wandb.log(
-                    {
-                        "example": [
-                            wandb.Image(image[ind]),
-                            wandb.Image(mask[ind]),
-                            wandb.Image(pred_mask[ind]),
-                        ]
-                    }
-                )
-
-                if np.amax(pred_mask[ind].numpy()) == 0:
-                    print(2 * '\n')
-                    continue
-                else:
-                    conf_matrix = confusion_matrix(
-                        pred_mask[ind].numpy().reshape(-1),
-                        mask[ind].numpy().reshape(-1),
-                    )
-                    jacc_score = jaccard_score(
-                        pred_mask[ind].numpy().reshape(-1),
-                        mask[ind].numpy().reshape(-1),
-                    )
-        return conf_matrix, jacc_score
 
 
 def log_predictions(ds_test, model, task: str = "galaxy_zoo3d", n: int = 3) -> None:
@@ -83,6 +47,7 @@ def log_predictions(ds_test, model, task: str = "galaxy_zoo3d", n: int = 3) -> N
     if selected_true_masks.shape[-1] > 1:
         selected_true_masks = np.argmax(selected_true_masks, axis=-1)
 
+    cmap = colors.ListedColormap(['k', 'b', 'y', 'r'])
     for i in range(n):
         fig, axes = plt.subplots(1, 3, figsize=(12, 4))
         galaxy = selected_images[i].numpy()
@@ -92,11 +57,11 @@ def log_predictions(ds_test, model, task: str = "galaxy_zoo3d", n: int = 3) -> N
         axes[0].set_title("Original Image")
         axes[0].axis("off")
 
-        axes[1].imshow(predicted_masks[i], cmap="viridis")
+        axes[1].imshow(predicted_masks[i], cmap=cmap)
         axes[1].set_title("Predicted Mask")
         axes[1].axis("off")
 
-        axes[2].imshow(selected_true_masks[i], cmap="viridis")
+        axes[2].imshow(selected_true_masks[i], cmap=cmap)
         axes[2].set_title("Ground Truth Mask")
         axes[2].axis("off")
 
@@ -105,7 +70,7 @@ def log_predictions(ds_test, model, task: str = "galaxy_zoo3d", n: int = 3) -> N
         plt.close(fig)  # Close figure to free memory
 
 
-def log_training_examples(dataset, n: int = 5):
+def log_training_examples(dataset, n: int = 5) -> None:
     """Log training examples to check if the masks were correctly generated."""
     for batch in dataset.take(1):
         # Extract images and masks explicitly
@@ -113,9 +78,9 @@ def log_training_examples(dataset, n: int = 5):
         masks = batch[1]
         break
 
-    batch_size = tf.shape(images)[0]
-    n = tf.minimum(n, batch_size).numpy()
-    indices = np.random.choice(batch_size, n, replace=False)
+    batch_size: int = tf.shape(images)[0]
+    size: int = tf.minimum(n, batch_size).numpy()
+    indices: NDArray = np.random.choice(batch_size, size, replace=False)
     selected_images = tf.gather(images, indices)
     selected_masks = tf.gather(masks, indices)
 
@@ -123,13 +88,14 @@ def log_training_examples(dataset, n: int = 5):
     if selected_masks.shape[-1] > 1:
         selected_masks = np.argmax(selected_masks, axis=-1)
 
+    cmap = colors.ListedColormap(['k', 'b', 'y', 'r'])
     for i in range(n):
         fig, axes = plt.subplots(1, 2, figsize=(16, 8))
         axes[0].imshow(selected_images[i])
         axes[0].set_title("Original Image")
         axes[0].axis("off")
 
-        axes[1].imshow(selected_masks[i], cmap="viridis")
+        axes[1].imshow(selected_masks[i], cmap=cmap)
         axes[1].set_title("Ground Truth Mask")
         axes[1].axis("off")
 
@@ -138,39 +104,7 @@ def log_training_examples(dataset, n: int = 5):
         plt.close(fig)  # Close figure to free memory
 
 
-def jaccard(y_true, y_pred):
-    """Jaccard index to compute after each epoch."""
-    tp = keras.metrics.TruePositives()
-    fp = keras.metrics.FalsePositives()
-    fn = keras.metrics.FalseNegatives()
-
-    y_hats = tf.math.argmax(y_pred, axis=-1)
-    tp.update_state(y_true, y_hats)
-    fp.update_state(y_true, y_hats)
-    fn.update_state(y_true, y_hats)
-
-    score = tp.result() / (tp.result() + fp.result() + fn.result())
-
-    return score.numpy()
-
-
-def dice(y_true, y_pred):
-    """Dice coefficient to compute after each epoch."""
-    tp = keras.metrics.TruePositives()
-    fp = keras.metrics.FalsePositives()
-    fn = keras.metrics.FalseNegatives()
-
-    y_hats = tf.math.argmax(y_pred, axis=-1)
-    tp.update_state(y_true, y_hats)
-    fp.update_state(y_true, y_hats)
-    fn.update_state(y_true, y_hats)
-
-    score = 2 * tp.result() / (2 * tp.result() + fp.result() + fn.result())
-
-    return score.numpy()
-
-
-class TimeCallback(tf.keras.callbacks.Callback):  # pylint: disable=no-member
+class TimeCallback(tf.keras.callbacks.Callback):
     def __init__(self):
         self.times = []
         self.epochs = []
@@ -193,3 +127,38 @@ class TimeCallback(tf.keras.callbacks.Callback):  # pylint: disable=no-member
                 plt.text(i, j, str(round(j - j_prev, 3)))
 
         plt.savefig(datetime.now().strftime("%Y%m%d%H%M%S") + ".png")
+
+
+def get_iou_configs(n_labels: int = 4, sparse: bool = True, compute_mean_iou: bool = False) -> list:
+    """
+    Generate a list of IoU metrics from tf.keras with the corresponding configurations for our pipeline.
+    Will ignore class labeled as `0`, corresponding to the background.
+    """
+    metric_kwargs: Dict[str, Any] = {
+        'num_classes': n_labels,
+        'sparse_y_pred': False,
+        'ignore_class': 0,
+        'axis': -1,
+    }
+    metrics: list = []
+    if compute_mean_iou:
+        mean_kwargs: Dict[str, Any] = deepcopy(metric_kwargs)
+        mean_kwargs['name'] = 'Mean_IoU'
+
+        if not sparse:
+            metrics.append(tf.keras.metrics.OneHotMeanIoU(**mean_kwargs))
+        else:
+            mean_kwargs['sparse_y_true'] = True
+            metrics.append(tf.keras.metrics.MeanIoU(**mean_kwargs))
+
+    for label in range(1, n_labels):
+        metric_kwargs['target_class_ids'] = [label]
+        metric_kwargs['name'] = f"IoU_{label}"
+
+        if not sparse:
+            metrics.append(tf.keras.metrics.OneHotIoU(**metric_kwargs))
+        else:
+            metric_kwargs['sparse_y_true'] = True
+            metrics.append(tf.keras.metrics.IoU(**metric_kwargs))
+
+    return metrics

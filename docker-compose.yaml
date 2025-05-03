@@ -10,8 +10,7 @@ services:
       - ${JUPYTER_PORT}:${JUPYTER_PORT}
     expose:
       - ${JUPYTER_PORT}
-    command: 'poetry run python imgalaxy/train.py --task lensing'
-    # command: 'poetry run python imgalaxy/train.py'
+    command: 'poetry run python imgalaxy/train.py --one-hot --task lensing'
     # command: 'tail -f /dev/null'
     # command: 'poetry run wandb sweep --resume ganegroup/galaxy-segmentation-project/5ozjufhs'
     volumes:

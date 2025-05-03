@@ -1,4 +1,4 @@
-# pylint: disable=no-member
+# pylint: disable=no-member  # pylint keeps insisting that there's no tf.keras 🤷
 from typing import Callable, Union
 
 import tensorflow as tf
@@ -75,6 +75,9 @@ class BaseSegmentationPipeline:
             mask, (self.size, self.size), method=tf.image.ResizeMethod.NEAREST_NEIGHBOR
         )
         return image, mask
+
+    def load_data(self, example):
+        raise NotImplementedError("Not implemented. Use either lensing or gz3d pipelines instead.")
 
     def __call__(self, ds):
         ds = ds.map(self.load_data, num_parallel_calls=tf.data.AUTOTUNE)
