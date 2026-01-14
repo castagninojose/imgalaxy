@@ -2,21 +2,29 @@
 import click
 import tensorflow as tf
 import tensorflow_datasets as tfds
+import wandb
 from keras_unet_collection import models
 from tensorflow.keras import mixed_precision
 from wandb.integration.keras import WandbMetricsLogger
 
-import wandb
 from imgalaxy.cfg import MODELS_DIR
 from imgalaxy.constants import IMAGE_SIZE, MIN_VOTE, NUM_EPOCHS
 from imgalaxy.helpers import get_iou_configs, log_predictions
 from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline, LensingPipeline
 
 mixed_precision.set_global_policy("mixed_float16")
+tf.get_logger().setLevel("ERROR")
+
+
+def safe_cce(y_true, y_pred):
+    y_pred = tf.clip_by_value(y_pred, 1e-7, 1.0 - 1e-7)
+    return tf.reduce_mean(
+        tf.keras.losses.categorical_crossentropy(y_true, y_pred, from_logits=False)
+    )
 
 
 @click.command()
-@click.option("--learning-rate", default=1e-02, show_default=True, help="Learning rate.")
+@click.option("--learning-rate", default=1e-04, show_default=True, help="Learning rate.")
 @click.option(
     "--activation",
     default="ReLU",
@@ -83,9 +91,7 @@ def train(
         channels = 3
         if task == 'lensing':
             channels: int = 5  # lensing images have 5 channels
-            pipeline = LensingPipeline(
-                size=64, sparse=sparse
-            )  # TODO May 2025: avoid using magic number
+            pipeline = LensingPipeline(size=64, sparse=sparse)
 
         else:
             pipeline = GZ3DPipeline(
@@ -108,7 +114,7 @@ def train(
             n_labels=4,
             filter_num=[64, 128, 256, 512],
             activation=activation,
-            output_activation=out_activation,
+            output_activation="Softmax",
             pool=pool,
             unpool=unpool,
             name='att_unet',
@@ -116,7 +122,7 @@ def train(
 
         model = AugmentedSegmentationModel(
             augmentations=[
-                tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
+                tf.keras.layers.RandomFlip(mode="horizontal_and_vertical", seed=101),
                 tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
                 tf.keras.layers.RandomZoom(height_factor=(-0.2, +0.2)),
             ],
@@ -137,20 +143,41 @@ def train(
             ds_test = ds_test.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
             ds_test = ds_test.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
 
-        train_batches = pipeline(ds_train)
-        val_batches = pipeline(ds_val)
+        train_batches = pipeline(ds_train).repeat()
+        val_batches = pipeline(ds_val).repeat()
+
         if sparse:
-            loss = tf.keras.losses.SparseCategoricalCrossentropy(ignore_class=0)
+            loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
         else:
-            loss = tf.keras.losses.CategoricalFocalCrossentropy(
-                alpha=loss_alpha, gamma=loss_gamma, label_smoothing=label_smoothing
+            loss = tf.keras.losses.CategoricalCrossentropy(
+                label_smoothing=label_smoothing, from_logits=False, reduction="sum_over_batch_size"
             )
-            # loss = tf.keras.losses.CategoricalCrossentropy(label_smoothing=label_smoothing)
+
         model.compile(
             loss=loss,
-            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-            metrics=get_iou_configs(sparse=sparse),
+            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, clipnorm=1.0),
+            metrics=get_iou_configs(sparse=False),
         )
+
+        # --- DEBUG: manual validation loss probe ---
+        val_batch = next(iter(val_batches))
+        images_dbg, masks_dbg = val_batch
+
+        preds_dbg = model(images_dbg, training=False)
+        loss_dbg = model.compiled_loss(masks_dbg, preds_dbg)
+
+        tf.print(
+            "MANUAL VAL LOSS:",
+            loss_dbg,
+            "mask min/max:",
+            tf.reduce_min(masks_dbg),
+            tf.reduce_max(masks_dbg),
+            "pred min/max:",
+            tf.reduce_min(preds_dbg),
+            tf.reduce_max(preds_dbg),
+        )
+        # --- DEBUG: manual validation loss probe ---
+
         _ = model.fit(
             train_batches,
             epochs=NUM_EPOCHS,
@@ -160,7 +187,7 @@ def train(
             callbacks=[
                 WandbMetricsLogger(),
                 tf.keras.callbacks.ModelCheckpoint(
-                    MODELS_DIR / f"best_{task}.keras",
+                    str(MODELS_DIR / f"best_{task}.keras"),
                     monitor='val_IoU_1',
                     save_best_only=True,
                     mode='max',

@@ -79,14 +79,42 @@ class BaseSegmentationPipeline:
     def load_data(self, example):
         raise NotImplementedError("Not implemented. Use either lensing or gz3d pipelines instead.")
 
+    @property
+    def metrics(self):
+        return [self.compiled_loss, *self.compiled_metrics]
+
     def __call__(self, ds):
         ds = ds.map(self.load_data, num_parallel_calls=tf.data.AUTOTUNE)
         ds = ds.map(self.resize, num_parallel_calls=tf.data.AUTOTUNE)
+
+        # if not self.sparse:
+        ds = ds.map(
+            lambda x, y: (x, tf.one_hot(tf.squeeze(y, axis=-1), depth=4)),
+            num_parallel_calls=tf.data.AUTOTUNE,
+        )
+
+        # debugging
+        def assert_one_hot(y):
+            tf.debugging.assert_near(
+                tf.reduce_sum(y, axis=-1),
+                1.0,
+                message="Found non-one-hot pixel in mask",
+            )
+            return y  # IMPORTANT
+
+        ds = ds.map(
+            lambda x, y: (x, assert_one_hot(y)),
+            num_parallel_calls=tf.data.AUTOTUNE,
+        )
+        # debugging
+
         if self.cache:
             ds = ds.cache()
         if self.shuffle_buffer_size > 0:
             ds = ds.shuffle(buffer_size=self.shuffle_buffer_size)
+
         ds = ds.batch(self.batch_size)
+
         if self.prefetch:
             ds = ds.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
@@ -125,13 +153,7 @@ class GZ3DPipeline(BaseSegmentationPipeline):
         combined_mask += tf.where(bar_mask == 1, 2, 0)  # label bars as 2
         # since these are added, pixels in both bars and spirals are labeled as 1 + 2 = 3.
 
-        if not self.sparse:
-            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=4)
-            mask = tf.squeeze(mask, axis=2)
-        else:
-            mask = tf.cast(combined_mask, tf.int32)
-
-        return image, mask
+        return image, combined_mask
 
 
 class LensingPipeline(BaseSegmentationPipeline):
@@ -153,17 +175,12 @@ class LensingPipeline(BaseSegmentationPipeline):
         lens_mask = tf.cast(lens_mask, tf.int32)
         background_mask = tf.cast(background_mask, tf.int32)
 
-        combined_mask = tf.where(source_mask == 1, 1, 0)  # label source as 1
-        combined_mask = tf.where(lens_mask == 1, 2, combined_mask)  # label lens as 2
-        combined_mask = tf.where(background_mask == 1, 3, combined_mask)  # label background as 3
+        combined_mask = tf.zeros_like(source_mask, dtype=tf.int32)
+        combined_mask = tf.where(source_mask == 1, 1, combined_mask)
+        combined_mask = tf.where(lens_mask == 1, 2, combined_mask)
+        combined_mask = tf.where(background_mask == 1, 3, combined_mask)
 
-        if not self.sparse:
-            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=4)
-            mask = tf.squeeze(mask, axis=2)
-        else:
-            mask = tf.cast(combined_mask, tf.int32)
-
-        return image, mask
+        return image, combined_mask
 
 
 class AugmentLayer(tf.keras.layers.Layer):
@@ -196,6 +213,8 @@ class AugmentLayer(tf.keras.layers.Layer):
                 images_masks = augmentation(images_masks)
 
             images, masks = tf.split(images_masks, [img_channels, mask_channels], axis=-1)
+            images = tf.cast(images, tf.float16)
+            masks = tf.cast(masks, tf.float16)
 
         return images, masks
 
@@ -250,23 +269,71 @@ class AugmentedSegmentationModel(tf.keras.Model):
     def call(self, inputs, training=False):
         return self.segmentation_model(inputs, training=training)
 
+    # def train_step(self, data):
+    #     images, masks = data
+
+    #     # 🚨 DIAGNOSTIC: forward pass ONLY
+    #     images, masks = self.augment_layer(images, masks, training=True)
+    #     predictions = self(images, training=False)
+
+    #     tf.debugging.assert_all_finite(
+    #         predictions, "NaN/Inf in forward pass (no backprop)"
+    #     )
+
+    #     # If we get here, forward pass is numerically stable
+    #     with tf.GradientTape() as tape:
+    #         predictions = self(images, training=True)
+    #         loss = self.compiled_loss(masks, predictions)
+
+    #     grads = tape.gradient(loss, self.trainable_variables)
+    #     self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+    #     self.compiled_metrics.update_state(masks, predictions)
+
+    #     return {m.name: m.result() for m in self.metrics}
+
     def train_step(self, data):
         images, masks = data
+
         with tf.GradientTape() as tape:
             images, masks = self.augment_layer(images, masks, training=True)
+
+            # === DIAGNOSTIC: mask integrity check ===
+            tf.debugging.assert_all_finite(masks, "NaN/Inf in masks after augmentation")
+            mask_sum = tf.reduce_sum(masks, axis=-1)
+            tf.debugging.assert_near(
+                mask_sum,
+                tf.ones_like(mask_sum),
+                atol=1e-3,
+                message="Masks are no longer one-hot after augmentation",
+            )
+            # === DIAGNOSTIC: mask integrity check ===
+
             predictions = self(images, training=True)
-            loss = self.compute_loss(y=masks, y_pred=predictions)
+            # === DIAGNOSTIC: mask and prediction integrity check ===
+            tf.debugging.assert_equal(
+                tf.shape(masks)[1:3],
+                tf.shape(predictions)[1:3],
+                message="Mask and prediction spatial dimensions do not match",
+            )
+            # === DIAGNOSTIC: mask and prediction integrity check ===
+            # loss = self.compiled_loss(masks, predictions)
+            loss = self.compiled_loss(tf.cast(masks, tf.float32), tf.cast(predictions, tf.float32))
 
-        # Compute gradients
-        gradients = tape.gradient(loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        grads = tape.gradient(loss, self.trainable_variables)
+        # === DIAGNOSTIC: check numeric values of gradient ===
+        # global_norm = tf.linalg.global_norm(grads)
+        # tf.print("Gradient global norm:", global_norm)
+        # === DIAGNOSTIC: check numeric values of gradient ===
+        # self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        grads, _ = tf.clip_by_global_norm(grads, 5.0)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        self.compiled_metrics.update_state(masks, predictions)
 
-        # Update metrics (includes the metric that tracks the loss)
-        for metric in self.metrics:
-            if metric.name == "loss":
-                metric.update_state(loss)
-            else:
-                metric.update_state(masks, predictions)
-
-        # Return a dictionary with loss and all metrics
         return {m.name: m.result() for m in self.metrics}
+
+    def test_step(self, data):
+        images, masks = data
+        predictions = self(images, training=False)
+        loss = self.compiled_loss(masks, predictions)
+        self.compiled_metrics.update_state(masks, predictions)
+        return {"loss": loss, **{m.name: m.result() for m in self.metrics}}

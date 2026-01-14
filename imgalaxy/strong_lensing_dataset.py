@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow_datasets as tfds
 from tqdm import tqdm
 
-from imgalaxy.cfg import DES_DATA, LENSING_MASKS_DIR
+from imgalaxy.cfg import DES_DATA, LENSING_DATASET_DIR, LENSING_MASKS_DIR
 
 
 class LensingDataset(tfds.core.GeneratorBasedBuilder):
@@ -39,7 +39,7 @@ class LensingDataset(tfds.core.GeneratorBasedBuilder):
         )
 
     def _split_generators(self, dl_manager):
-        data_dir = dl_manager.extract('/hdd/lensing-dataset/')
+        data_dir = dl_manager.extract(LENSING_DATASET_DIR)
         return {
             'train': self._generate_examples(data_dir),
         }
@@ -67,7 +67,7 @@ class LensingDataset(tfds.core.GeneratorBasedBuilder):
             }
 
 
-def stack_images_and_masks(N: int = 9999, save_path: str = '/hdd/lensing-dataset/'):
+def stack_images_and_masks(N: int = 9999, save_path: str = LENSING_DATASET_DIR):
     # Preallocate arrays
     images = np.zeros((N,) + (64, 64, 5), dtype=np.float32)
     lenses = np.zeros((N,) + (64, 64), dtype=np.uint8)
@@ -97,6 +97,6 @@ def stack_images_and_masks(N: int = 9999, save_path: str = '/hdd/lensing-dataset
 
 
 if __name__ == '__main__':
-    # stack_images_and_masks(999)
-    builder = LensingDataset(data_dir='/hdd/lensing-dataset/')
+    stack_images_and_masks(9999)
+    builder = LensingDataset(data_dir=LENSING_DATASET_DIR)
     builder.download_and_prepare()

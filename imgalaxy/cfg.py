@@ -8,8 +8,6 @@ from decouple import AutoConfig
 PKG_PATH = importlib_resources.files("imgalaxy")
 REPO_ROOT = PKG_PATH.parent
 
-config = AutoConfig(search_path=REPO_ROOT)
-
 RESOURCES_DIR = PKG_PATH / "resources"
 DATA_DIR = RESOURCES_DIR / "data"
 METADATA_DIR = RESOURCES_DIR / "metadata"
@@ -22,6 +20,9 @@ Path(DATA_DIR).mkdir(exist_ok=True, parents=True)
 Path(METADATA_DIR).mkdir(exist_ok=True, parents=True)
 Path(LOGS_DIR).mkdir(exist_ok=True, parents=True)
 Path(MODELS_DIR).mkdir(exist_ok=True, parents=True)
+
+config = AutoConfig(search_path=REPO_ROOT)
+LENSING_DATASET_DIR = config("LENSING_DATASET_DIR", cast=str)
 
 BASE_URL = "https://data.sdss.org/sas/dr17/manga/morphology/galaxyzoo3d/v4_0_0/"
 SHA1SUM_URL = "manga_morphology_galaxyzoo3d_v4_0_0.sha1sum"
