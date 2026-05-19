@@ -10,7 +10,7 @@ services:
       - ${JUPYTER_PORT}:${JUPYTER_PORT}
     expose:
       - ${JUPYTER_PORT}
-    command: 'poetry run python imgalaxy/train.py --one-hot --task lensing --model vnet'
+    command: 'poetry run python imgalaxy/train.py --one-hot --task lensing --model att_unet --sweep'
     # command: 'tail -f /dev/null'
     volumes:
       - ${GALAXY_ZOO_DIR}:/root/tensorflow_datasets/galaxy_zoo3d

@@ -60,7 +60,7 @@ SWEEP_CONFIGS = {
     "trans_unet": with_overrides(
         BASE,
         {
-            "filter_num": {"values": [[64, 128, 256], [64, 128, 256, 512]]},
+            "filter_num": {"values": [[64, 128, 256]]},  # , [64, 128, 256, 512]]},
             "learning_rate": {"distribution": "log_uniform_values", "min": 5e-5, "max": 1e-3},
         },
     ),
