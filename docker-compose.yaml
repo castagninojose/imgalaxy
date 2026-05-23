@@ -10,11 +10,11 @@ services:
       - ${JUPYTER_PORT}:${JUPYTER_PORT}
     expose:
       - ${JUPYTER_PORT}
-    command: 'poetry run python imgalaxy/train.py --one-hot --task lensing'
+    command: 'poetry run python imgalaxy/train.py --one-hot --task lensing --model att_unet --sweep'
     # command: 'tail -f /dev/null'
     volumes:
       - ${GALAXY_ZOO_DIR}:/root/tensorflow_datasets/galaxy_zoo3d
-      - ${STRONG_LENSING_DIR}:/root/tensorflow_datasets/lensing
+      - ${LENSING_DATASET_DIR}:/root/tensorflow_datasets/lensing
       # - /home/tinto/git-repos/imgalaxy/imgalaxy/resources/models:/imgalaxy/imgalaxy/resources/models
       - type: bind
         source: ./imgalaxy

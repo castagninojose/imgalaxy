@@ -2,6 +2,7 @@
 from typing import Callable, Union
 
 import tensorflow as tf
+from keras_unet_collection import models
 
 from imgalaxy.constants import THRESHOLD
 
@@ -79,14 +80,27 @@ class BaseSegmentationPipeline:
     def load_data(self, example):
         raise NotImplementedError("Not implemented. Use either lensing or gz3d pipelines instead.")
 
+    @property
+    def metrics(self):
+        return [self.compiled_loss, *self.compiled_metrics]
+
     def __call__(self, ds):
         ds = ds.map(self.load_data, num_parallel_calls=tf.data.AUTOTUNE)
         ds = ds.map(self.resize, num_parallel_calls=tf.data.AUTOTUNE)
+
+        if not self.sparse:
+            ds = ds.map(
+                lambda x, y: (x, tf.one_hot(tf.squeeze(y, axis=-1), depth=4)),
+                num_parallel_calls=tf.data.AUTOTUNE,
+            )
+
         if self.cache:
             ds = ds.cache()
         if self.shuffle_buffer_size > 0:
             ds = ds.shuffle(buffer_size=self.shuffle_buffer_size)
+
         ds = ds.batch(self.batch_size)
+
         if self.prefetch:
             ds = ds.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
@@ -125,13 +139,7 @@ class GZ3DPipeline(BaseSegmentationPipeline):
         combined_mask += tf.where(bar_mask == 1, 2, 0)  # label bars as 2
         # since these are added, pixels in both bars and spirals are labeled as 1 + 2 = 3.
 
-        if not self.sparse:
-            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=4)
-            mask = tf.squeeze(mask, axis=2)
-        else:
-            mask = tf.cast(combined_mask, tf.int32)
-
-        return image, mask
+        return image, combined_mask
 
 
 class LensingPipeline(BaseSegmentationPipeline):
@@ -153,17 +161,12 @@ class LensingPipeline(BaseSegmentationPipeline):
         lens_mask = tf.cast(lens_mask, tf.int32)
         background_mask = tf.cast(background_mask, tf.int32)
 
-        combined_mask = tf.where(source_mask == 1, 1, 0)  # label source as 1
-        combined_mask = tf.where(lens_mask == 1, 2, combined_mask)  # label lens as 2
-        combined_mask = tf.where(background_mask == 1, 3, combined_mask)  # label background as 3
+        combined_mask = tf.zeros_like(source_mask, dtype=tf.int32)
+        combined_mask = tf.where(source_mask == 1, 1, combined_mask)
+        combined_mask = tf.where(lens_mask == 1, 2, combined_mask)
+        combined_mask = tf.where(background_mask == 1, 3, combined_mask)
 
-        if not self.sparse:
-            mask = tf.one_hot(tf.cast(combined_mask, tf.int32), depth=4)
-            mask = tf.squeeze(mask, axis=2)
-        else:
-            mask = tf.cast(combined_mask, tf.int32)
-
-        return image, mask
+        return image, combined_mask
 
 
 class AugmentLayer(tf.keras.layers.Layer):
@@ -196,6 +199,8 @@ class AugmentLayer(tf.keras.layers.Layer):
                 images_masks = augmentation(images_masks)
 
             images, masks = tf.split(images_masks, [img_channels, mask_channels], axis=-1)
+            images = tf.cast(images, tf.float16)
+            masks = tf.cast(masks, tf.float16)
 
         return images, masks
 
@@ -252,21 +257,65 @@ class AugmentedSegmentationModel(tf.keras.Model):
 
     def train_step(self, data):
         images, masks = data
+
         with tf.GradientTape() as tape:
             images, masks = self.augment_layer(images, masks, training=True)
             predictions = self(images, training=True)
-            loss = self.compute_loss(y=masks, y_pred=predictions)
+            loss = self.compiled_loss(tf.cast(masks, tf.float32), tf.cast(predictions, tf.float32))
 
-        # Compute gradients
-        gradients = tape.gradient(loss, self.trainable_variables)
-        self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+        grads = tape.gradient(loss, self.trainable_variables)
+        grads, _ = tf.clip_by_global_norm(grads, 5.0)
+        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        self.compiled_metrics.update_state(masks, predictions)
 
-        # Update metrics (includes the metric that tracks the loss)
-        for metric in self.metrics:
-            if metric.name == "loss":
-                metric.update_state(loss)
-            else:
-                metric.update_state(masks, predictions)
-
-        # Return a dictionary with loss and all metrics
         return {m.name: m.result() for m in self.metrics}
+
+    def test_step(self, data):
+        images, masks = data
+        predictions = self(images, training=False)
+        loss = self.compiled_loss(masks, predictions)
+        self.compiled_metrics.update_state(masks, predictions)
+        return {"loss": loss, **{m.name: m.result() for m in self.metrics}}
+
+
+def build_model(name, input_shape, n_labels, cfg):
+    """Instanciate a model with its corresponding base configs."""
+    if name == "att_unet":
+        return models.att_unet_2d(
+            input_shape,
+            n_labels=n_labels,
+            filter_num=cfg.filter_num,
+            activation=cfg.activation,
+            output_activation="Softmax",
+            batch_norm=cfg.batch_norm,
+            pool=cfg.pool,
+            unpool=cfg.unpool,
+        )
+
+    if name == "vnet":
+        return models.vnet_2d(
+            input_shape,
+            n_labels=n_labels,
+            filter_num=cfg.filter_num,
+            res_num_ini=0,
+            res_num_max=0,
+            activation=cfg.activation,
+            batch_norm=cfg.batch_norm,
+        )
+
+    if name == "res_unet":
+        return models.resunet_a_2d(
+            input_shape,
+            n_labels=n_labels,
+            filter_num=cfg.filter_num,
+            activation=cfg.activation,
+            batch_norm=cfg.batch_norm,
+            dilation_num=[1, 3, 15, 31],
+        )
+
+    if name == "trans_unet":
+        return models.transunet_2d(
+            input_shape, n_labels=n_labels, filter_num=cfg.filter_num, activation=cfg.activation
+        )
+
+    raise ValueError(f"Unknown model: {name}")

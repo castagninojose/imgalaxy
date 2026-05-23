@@ -7,12 +7,12 @@ from typing import Any, Dict
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+import wandb
 from matplotlib import colors
 from numpy.typing import NDArray
 
-import wandb
-
 tf.config.run_functions_eagerly(True)
+tf.data.experimental.enable_debug_mode()
 
 
 def log_predictions(ds_test, model, task: str = "galaxy_zoo3d", n: int = 3) -> None:

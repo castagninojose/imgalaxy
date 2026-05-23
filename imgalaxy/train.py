@@ -2,44 +2,205 @@
 import click
 import tensorflow as tf
 import tensorflow_datasets as tfds
-from keras_unet_collection import models
+import wandb
 from tensorflow.keras import mixed_precision
 from wandb.integration.keras import WandbMetricsLogger
 
-import wandb
-from imgalaxy.cfg import MODELS_DIR
 from imgalaxy.constants import IMAGE_SIZE, MIN_VOTE, NUM_EPOCHS
 from imgalaxy.helpers import get_iou_configs, log_predictions
-from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline, LensingPipeline
+from imgalaxy.unet import AugmentedSegmentationModel, GZ3DPipeline, LensingPipeline, build_model
 
 mixed_precision.set_global_policy("mixed_float16")
+tf.get_logger().setLevel("ERROR")
+
+BASE: dict = {
+    "method": "bayes",
+    "run_cap": 29,
+    "metric": {"name": "epoch/val_IoU_1", "goal": "maximize"},
+    "early_terminate": {"type": "hyperband", "min_iter": 11, "max_iter": 150},
+    "parameters": {
+        "learning_rate": {"distribution": "log_uniform_values", "min": 1e-5, "max": 5e-4},
+        "label_smoothing": {"distribution": "uniform", "min": 0, "max": 1},
+        'alpha': {"distribution": "uniform", "min": 0.05, "max": 0.8},
+        'gamma': {"distribution": "uniform", "min": 0.5, "max": 5.0},
+        "filter_num": {"values": [[32, 64, 128, 256], [64, 128, 256, 512]]},
+        "activation": {"values": ["ReLU", "GELU"]},
+        "batch_norm": {"values": [True, False]},
+        "sparse": {"values": [True, False]},
+    },
+}
+
+DEFAULT_CONFIG: dict = {
+    "learning_rate": 1e-4,
+    "filter_num": [32, 64, 128, 256],
+    "activation": "ReLU",
+    "batch_norm": True,
+    "pool": "max",
+    "unpool": True,
+    "label_smoothing": 0.0,
+    "sparse": True,
+    "alpha": 0.25,
+    "gamma": 1,
+}
+
+
+def with_overrides(base: dict, overrides: dict) -> dict:
+    """Create run config by combining `base` and `overrides` dictionaries."""
+    out: dict = {**base}
+    out["parameters"] = {**base["parameters"], **overrides}
+    return out
+
+
+SWEEP_CONFIGS = {
+    "att_unet": with_overrides(
+        BASE, {"pool": {"values": ["max", "ave"]}, "unpool": {"values": [True]}}
+    ),
+    "res_unet": with_overrides(BASE, {"pool": {"values": ["max"]}, "unpool": {"values": [True]}}),
+    "vnet": with_overrides(BASE, {"filter_num": {"values": [[64, 128, 256, 512]]}}),
+    "trans_unet": with_overrides(
+        BASE,
+        {
+            "filter_num": {"values": [[64, 128, 256]]},  # , [64, 128, 256, 512]]},
+            "learning_rate": {"distribution": "log_uniform_values", "min": 5e-5, "max": 1e-3},
+        },
+    ),
+}
+
+
+def train(
+    *,
+    task: str = 'lensing',
+    model_name: str = 'att_unet',
+    project: str = 'imgalaxy',
+    sparse: bool = False,
+) -> None:
+    """
+    Main training routine compatible with one-off runs and with hyperparameters tuning.
+
+    Parameters
+    ----------
+    task : {'lensing', 'galaxy_zoo3d'}
+        Segmentation task to train the model for.
+    model_name : {'att_unet', 'res_unet', 'trans_unet', 'vnet'}
+        Name of the model to use. See `keras_unet_collection`[^1] for more details.
+    project : {'galaxy-segmentation-project', 'imgalaxy'}
+        Wandb project name to track training and log results.
+    sparse : bool
+        Whether or not to use `sparse` labels. If `False`, one-hot encoding will be used.
+
+    Returns
+    -------
+    No value
+
+    References
+    ----------
+    [^1] https://github.com/yingkaisha/keras-unet-collection
+
+    """
+    if task not in ["lensing", "galaxy_zoo3d"]:
+        raise ValueError(f"Invalid task: {task}")
+
+    gpu = tf.config.list_physical_devices("GPU")[0]
+    tf.config.experimental.set_memory_growth(gpu, True)
+    tf.config.optimizer.set_jit(True)
+
+    with wandb.init(project=project, config=DEFAULT_CONFIG) as run:
+        cfg = run.config
+        cfg.task = task
+        cfg.model = model_name
+        run.name = f"{model_name}_{task}"
+
+        if task == "lensing":
+            channels = 5
+            pipeline = LensingPipeline(size=64, sparse=sparse)
+        else:
+            channels = 3
+            pipeline = GZ3DPipeline(
+                size=IMAGE_SIZE,
+                binary_threshold=True,
+                clip_votes_max=6,
+                sparse=sparse,
+            )
+
+        segmentation_model = build_model(
+            name=model_name,
+            input_shape=(pipeline.size, pipeline.size, channels),
+            n_labels=4,
+            cfg=cfg,
+        )
+
+        model = AugmentedSegmentationModel(
+            augmentations=[
+                tf.keras.layers.RandomFlip("horizontal_and_vertical", seed=101),
+                tf.keras.layers.RandomRotation(1.0, seed=101),
+                tf.keras.layers.RandomZoom((-0.2, 0.2)),
+            ],
+            segmentation_model=segmentation_model,
+        )
+
+        ds_train, ds_val, ds_test = tfds.load(
+            task, split=["train[:75%]", "train[75%:90%]", "train[90%:]"]
+        )
+
+        if task == "galaxy_zoo3d":
+            for ds_name in ["ds_train", "ds_val", "ds_test"]:
+                ds = locals()[ds_name]
+                ds = ds.filter(lambda x: tf.reduce_max(x["spiral_mask"]) >= MIN_VOTE)
+                ds = ds.filter(lambda x: tf.reduce_max(x["bar_mask"]) >= MIN_VOTE)
+                locals()[ds_name] = ds
+
+        train_batches = pipeline(ds_train).repeat()
+        val_batches = pipeline(ds_val).repeat()
+
+        if sparse:
+            loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+        else:
+            # loss = tf.keras.losses.CategoricalCrossentropy(
+            #     label_smoothing=cfg.label_smoothing, from_logits=False,
+            # )
+            loss = tf.keras.losses.CategoricalFocalCrossentropy(
+                label_smoothing=cfg.label_smoothing,
+                alpha=cfg.alpha,
+                gamma=cfg.gamma,
+                from_logits=False,
+            )
+
+        model.compile(
+            optimizer=tf.keras.optimizers.Adam(learning_rate=cfg.learning_rate, clipnorm=1.0),
+            loss=loss,
+            metrics=get_iou_configs(sparse=False),
+        )
+
+        model.fit(
+            train_batches,
+            epochs=NUM_EPOCHS,
+            steps_per_epoch=5000 // pipeline.batch_size,
+            validation_data=val_batches,
+            validation_steps=5000 // pipeline.batch_size,
+            callbacks=[
+                WandbMetricsLogger(),
+                # tf.keras.callbacks.ModelCheckpoint(
+                #     str(MODELS_DIR / f"best_{task}_{model_name}.keras"),
+                #     monitor="val_IoU_1",
+                #     save_best_only=True,
+                #     mode="max",
+                # ),
+            ],
+        )
+
+        log_predictions(pipeline(ds_test), model, task, n=23)
 
 
 @click.command()
-@click.option("--learning-rate", default=1e-02, show_default=True, help="Learning rate.")
+@click.option("--task", required=True, type=click.Choice(["lensing", "galaxy_zoo3d"]))
 @click.option(
-    "--activation",
-    default="ReLU",
-    show_default=True,
-    help="Activation function. One of `keras_unet_collection.activations`.",
+    "--model",
+    required=True,
+    default="att_unet",
+    type=click.Choice(["att_unet", "res_unet", "vnet", "trans_unet"]),
 )
-@click.option("--batch-norm", default=False, show_default=True, help="Apply batch normalization.")
 @click.option(
-    "--out-activation",
-    default="Softmax",
-    show_default=True,
-    help="Output activation function. One of `keras_unet_collection.activations`.",
-)
-@click.option("--pool", default=False, show_default=False, help="Downsample strategy.")
-@click.option("--unpool", default=False, show_default=False, help="Upsampling strategy.")
-@click.option("--loss-alpha", default=0.25, show_default=True, help="Weight balancing factor.")
-@click.option("--loss-gamma", default=2.0, show_default=True, help="Focus parameter.")
-@click.option("--label-smoothing", default=0.0, show_default=True, help="Label smoothing factor.")
-@click.option(
-    "--task",
-    default='galaxy_zoo3d',
-    show_default=True,
-    help="Segmentation task. Either 'lensing' or  'galaxy_zoo3d'.",
+    "--sweep", is_flag=True, default=False, show_default=True, help="Launch a wandb sweep."
 )
 @click.option(
     "--sparse/--one-hot",
@@ -48,130 +209,23 @@ mixed_precision.set_global_policy("mixed_float16")
     is_flag=True,
     help="Use sparse labels. If `False`, one-hot encoded labels are used instead.",
 )
-def train(
-    learning_rate,
-    activation,
-    batch_norm,
-    out_activation,
-    pool,
-    unpool,
-    sparse,
-    task,
-    loss_alpha,
-    loss_gamma,
-    label_smoothing,
-):
-    if task not in ['lensing', 'galaxy_zoo3d']:
-        raise ValueError(f"Task must be one of 'lensing' or 'galaxy_zoo3d'. Instead got: {task}.")
+def main(task, model, sweep, sparse):
+    """CLI wrapper method for `train.py`."""
+    if task == 'lensing':
+        project = 'imgalaxy'
+    else:
+        project = 'galaxy-segmentation-project'
 
-    gpu = tf.config.list_physical_devices("GPU")[0]
-    tf.config.experimental.set_memory_growth(gpu, True)
-    tf.config.optimizer.set_jit(True)
-    with wandb.init(
-        project="imgalaxy",  # f"{task}-segmentation-project" could be used
-        name=f"att_unet_{task}",
-        config={
-            'group': f"jose_{task}",
-            'learning_rate': learning_rate,
-            'activation': activation,
-            'batch_norm': batch_norm,
-            'out_activation': out_activation,
-            'task': task,
-            'sparse': sparse,
-        },
-    ):
-        channels = 3
-        if task == 'lensing':
-            channels: int = 5  # lensing images have 5 channels
-            pipeline = LensingPipeline(
-                size=64, sparse=sparse
-            )  # TODO May 2025: avoid using magic number
-
-        else:
-            pipeline = GZ3DPipeline(
-                size=IMAGE_SIZE, binary_threshold=True, clip_votes_max=6, sparse=sparse
-            )
-
-        # segmentation_model = models.vnet_2d(
-        #     (pipeline.size, pipeline.size, channels),
-        #     n_labels=4,
-        #     filter_num=[64, 128, 256, 512],
-        #     activation=activation,
-        #     output_activation=out_activation,
-        #     pool=pool,
-        #     unpool=unpool,
-        #     name='vnet',
-        # )
-
-        segmentation_model = models.att_unet_2d(
-            (pipeline.size, pipeline.size, channels),
-            n_labels=4,
-            filter_num=[64, 128, 256, 512],
-            activation=activation,
-            output_activation=out_activation,
-            pool=pool,
-            unpool=unpool,
-            name='att_unet',
+    if sweep:
+        sweep_config = SWEEP_CONFIGS[model]
+        sweep_id = wandb.sweep(sweep_config, project=project)
+        wandb.agent(
+            sweep_id,
+            function=lambda: train(task=task, model_name=model, sparse=sparse, project=project),
         )
-
-        model = AugmentedSegmentationModel(
-            augmentations=[
-                tf.keras.layers.RandomFlip(mode="horizontal and vertical", seed=101),
-                tf.keras.layers.RandomRotation(factor=(0, 1), seed=101),
-                tf.keras.layers.RandomZoom(height_factor=(-0.2, +0.2)),
-            ],
-            segmentation_model=segmentation_model,
-        )
-
-        ds_train, ds_val, ds_test = tfds.load(
-            task, split=['train[:75%]', 'train[75%:90%]', 'train[90%:]']
-        )
-
-        if task == 'galaxy_zoo3d':
-            # Make sure the selected galaxies have "positive" bar and spiral masks
-            # We could increase the dataset size filtering only by spiral arms
-            ds_train = ds_train.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
-            ds_train = ds_train.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
-            ds_val = ds_val.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
-            ds_val = ds_val.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
-            ds_test = ds_test.filter(lambda x: tf.reduce_max(x['spiral_mask']) >= MIN_VOTE)
-            ds_test = ds_test.filter(lambda x: tf.reduce_max(x['bar_mask']) >= MIN_VOTE)
-
-        train_batches = pipeline(ds_train)
-        val_batches = pipeline(ds_val)
-        if sparse:
-            loss = tf.keras.losses.SparseCategoricalCrossentropy(ignore_class=0)
-        else:
-            loss = tf.keras.losses.CategoricalFocalCrossentropy(
-                alpha=loss_alpha, gamma=loss_gamma, label_smoothing=label_smoothing
-            )
-            # loss = tf.keras.losses.CategoricalCrossentropy(label_smoothing=label_smoothing)
-        model.compile(
-            loss=loss,
-            optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-            metrics=get_iou_configs(sparse=sparse),
-        )
-        _ = model.fit(
-            train_batches,
-            epochs=NUM_EPOCHS,
-            steps_per_epoch=(5000 // pipeline.batch_size),  # TODO May 2025: avoid magic number
-            validation_steps=(5000 // pipeline.batch_size),
-            validation_data=val_batches,
-            callbacks=[
-                WandbMetricsLogger(),
-                tf.keras.callbacks.ModelCheckpoint(
-                    MODELS_DIR / f"best_{task}.keras",
-                    monitor='val_IoU_1',
-                    save_best_only=True,
-                    mode='max',
-                ),
-            ],
-        )
-        log_predictions(pipeline(ds_test), model, task, n=23)
+    else:
+        train(task=task, model_name=model, sparse=sparse, project=project)
 
 
 if __name__ == '__main__':
-    # sweep_id = wandb.sweep(sweep=UNET_SWEEP_CONFIGS, project="imgalaxy")
-    # wandb.agent(sweep_id, function=train)
-    # wandb.agent(f"ganegroup/galaxy-segmentation-project/{sweep_id}", function=train, count=29)
-    train()  # pylint: disable=no-value-for-parameter
+    main()  # pylint: disable=no-value-for-parameter

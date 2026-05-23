@@ -4,12 +4,11 @@ RANDOM_SEED = 419
 
 BUFFER_SIZE = 300
 RUN_FROM = 'local'
-NUM_EPOCHS = 29
-IMAGE_SIZE = 128
+NUM_EPOCHS = 99
+IMAGE_SIZE = 64
 MASK = 'spiral_mask'
-MIN_VOTE = (
-    3  # min votes that the most voted pixel of a mask must have to be a spiral arm (barred) galaxy
-)
+MIN_VOTE = 3  # min votes that the most voted pixel of a mask must have to be a positive hit
+
 THRESHOLD = 3  # min votes that a pixel must have to be clasified as a spiral arm (bar)
 PATIENCE = 10
 
